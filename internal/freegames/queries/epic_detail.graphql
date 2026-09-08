@@ -1,0 +1,27 @@
+query getCatalogOffer($sandboxId: String!, $offerId: String!, $locale: String, $country: String!) {
+  Catalog {
+    catalogOffer(namespace: $sandboxId, id: $offerId, locale: $locale) {
+      title
+      id
+      namespace
+      countriesBlacklist
+      countriesWhitelist
+      description
+      longDescription
+      effectiveDate
+      expiryDate
+      offerType
+      isCodeRedemptionOnly
+      status
+      prePurchase
+      items { id namespace releaseInfo { appId platform } }
+      customAttributes { key value }
+      categories { path }
+      price(country: $country) {
+        totalPrice { discountPrice originalPrice currencyCode }
+        lineOffers { appliedRules { id endDate discountSetting { discountType } } }
+      }
+      allDependNsOfferIds
+    }
+  }
+}

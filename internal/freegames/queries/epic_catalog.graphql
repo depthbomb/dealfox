@@ -1,0 +1,27 @@
+query searchStoreQuery($country: String!, $allowCountries: String, $locale: String, $count: Int, $start: Int, $freeGame: Boolean, $onSale: Boolean) {
+  Catalog {
+    searchStore(country: $country, allowCountries: $allowCountries, locale: $locale, count: $count, start: $start, freeGame: $freeGame, onSale: $onSale) {
+      elements {
+        title
+        id
+        namespace
+        description
+        offerType
+        productSlug
+        url
+        keyImages { type url }
+        categories { path }
+        catalogNs { mappings(pageType: "productHome") { pageSlug pageType } }
+        offerMappings { pageSlug pageType }
+        price(country: $country) {
+          totalPrice { discountPrice originalPrice currencyCode }
+          lineOffers { appliedRules { id endDate discountSetting { discountType } } }
+        }
+        promotions {
+          promotionalOffers { promotionalOffers { startDate endDate discountSetting { discountType discountPercentage } } }
+        }
+      }
+      paging { count total }
+    }
+  }
+}

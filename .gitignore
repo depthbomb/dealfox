@@ -1,0 +1,7 @@
+.idea/
+.env
+.env.local
+/bin/
+/coverage.out
+/diagnostics/
+*.exe

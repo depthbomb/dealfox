@@ -1,0 +1,45 @@
+[Unit]
+Description=DealFox Discord bot
+Wants=network-online.target
+After=network-online.target postgresql.service
+Requires=postgresql.service
+
+[Service]
+Type=simple
+User=lamb
+Group=lamb
+WorkingDirectory=/home/lamb/dealfox
+StateDirectory=dealfox
+Environment=DIAGNOSTICS_DIRECTORY=/var/lib/dealfox/diagnostics
+ExecStartPre=/home/lamb/dealfox/current --config-dir /home/lamb/dealfox database status
+ExecStart=/home/lamb/dealfox/current --config-dir /home/lamb/dealfox serve
+Restart=on-failure
+RestartSec=10s
+TimeoutStopSec=2min
+
+CapabilityBoundingSet=
+LockPersonality=true
+MemoryMax=1G
+MemorySwapMax=0
+NoNewPrivileges=true
+PrivateDevices=true
+PrivateTmp=true
+ProtectClock=true
+ProtectControlGroups=true
+ProtectHome=read-only
+ProtectHostname=true
+ProtectKernelLogs=true
+ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectSystem=strict
+RemoveIPC=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+RestrictNamespaces=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+SystemCallArchitectures=native
+TasksMax=256
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
