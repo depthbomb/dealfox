@@ -92,8 +92,11 @@ func TestPollingAndDelivery(t *testing.T) {
 		t.Fatalf("poll did not group subscribers and split failed batch: %v", steam.batches)
 	}
 
-	sender.err = &rest.Error{
-		StatusCode: 403,
+	sender.err = &rest.DMError{
+		Stage: rest.DMStageSend,
+		Err: &rest.Error{
+			StatusCode: 403,
+		},
 	}
 	if err := w.Dispatch(ctx); err != nil {
 		t.Fatal(err)

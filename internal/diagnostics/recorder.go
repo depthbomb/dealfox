@@ -80,18 +80,19 @@ type Recorder struct {
 }
 
 var names = map[string][]string{
-	"command":    {"price", "about", "track", "track.add", "track.list", "track.remove", "freegames", "freegames.subscribe", "freegames.unsubscribe", "freegames.status", "account", "account.delete"},
-	"job":        {"poll", "deliver", "catalog", "retention", "free-game-discovery", "free-game-delivery", "free-game-retention", "diagnostics"},
-	"limit":      {"command", "price", "add", "account", "freegames"},
-	"http":       {"steam", "discord", "freegames"},
-	"cache":      {"price-hit", "price-miss", "artwork-hit", "artwork-miss", "steam-circuit-open"},
-	"delivery":   {"sale-sent", "sale-retry", "sale-dead", "free-sent", "free-retry", "free-dead"},
-	"source":     {"steam", "epic", "gog", "ubisoft"},
-	"work":       {"poll", "catalog", "retention", "steam", "epic", "gog", "ubisoft"},
-	"health":     {"process"},
-	"rate_limit": {"discord"},
-	"gateway":    {"idle", "dialing", "awaiting_hello", "authenticating", "ready", "reconnecting", "closing", "stopped"},
-	"framework":  {"gateway-raw-callback", "gateway-event-callback", "gateway-decode", "gateway-decode-callback", "gateway-state-callback", "gateway-state-hook", "interaction-http", "interactions-decode", "interactions", "events", "continuations", "schedules", "client-user"},
+	"continuation": {"account.delete"},
+	"command":      {"price", "about", "track", "track.add", "track.list", "track.remove", "freegames", "freegames.subscribe", "freegames.unsubscribe", "freegames.status", "account", "account.delete"},
+	"job":          {"poll", "deliver", "catalog", "retention", "free-game-discovery", "free-game-delivery", "free-game-retention", "diagnostics"},
+	"limit":        {"command", "price", "add", "account", "freegames"},
+	"http":         {"steam", "discord", "freegames"},
+	"cache":        {"price-hit", "price-miss", "artwork-hit", "artwork-miss", "steam-circuit-open"},
+	"delivery":     {"sale-sent", "sale-retry", "sale-dead", "free-sent", "free-retry", "free-dead"},
+	"source":       {"steam", "epic", "gog", "ubisoft"},
+	"work":         {"poll", "catalog", "retention", "steam", "epic", "gog", "ubisoft"},
+	"health":       {"process"},
+	"rate_limit":   {"discord"},
+	"gateway":      {"idle", "dialing", "awaiting_hello", "authenticating", "ready", "reconnecting", "closing", "stopped"},
+	"framework":    {"gateway-raw-callback", "gateway-event-callback", "gateway-decode", "gateway-decode-callback", "gateway-state-callback", "gateway-state-hook", "interaction-http", "interactions-decode", "interactions", "events", "continuations", "schedules", "client-user"},
 }
 
 var gaugeNames = []string{
@@ -132,7 +133,7 @@ func classify(err error) (string, int, int) {
 		return "http_error", max(0, min(remote.StatusCode, 599)), max(0, min(remote.Code, 999999))
 	}
 
-	if _, ok := errors.AsType[*preconditions.Failure](err); ok {
+	if errors.Is(err, preconditions.ErrDenied) {
 		return "rejected", 0, 0
 	}
 

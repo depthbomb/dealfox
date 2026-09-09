@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -13,7 +14,7 @@ import (
 	"github.com/depthbomb/tomogo/interactions"
 	"github.com/depthbomb/tomogo/permissions"
 	"github.com/depthbomb/tomogo/preconditions"
-	"github.com/tomogo-framework/snowflake"
+	"github.com/depthbomb/tomogo/resource"
 )
 
 func freeSourcesOption(required bool) api.CommandOption {
@@ -96,8 +97,8 @@ func (h *Handler) freeGamesCommand() command {
 }
 
 func (h *Handler) freeGamesAction(action string) commandHandler {
-	return func(ctx context.Context, i *api.Interaction, options []api.InteractionOption, responder *interactions.Responder) error {
-		return h.freeGames(ctx, i, options, responder, action)
+	return func(ctx context.Context, call commandCall) error {
+		return h.freeGames(ctx, call, action)
 	}
 }
 
@@ -106,41 +107,39 @@ func (h *Handler) verifyFreeChannel(ctx context.Context, i *api.Interaction, cha
 		return domain.Invalid("Channel validation is unavailable. Please try again later.")
 	}
 
-	channel, _, err := h.REST.Channels().Get(ctx, channelID)
+	bot, _, err := h.REST.Users().GetCurrent(ctx)
 	if err != nil {
+		return err
+	}
+	if bot.ID == 0 {
+		return domain.Invalid("Channel validation is unavailable. Please try again later.")
+	}
+	resources, err := resource.New(h.REST, resource.Config{})
+	if err != nil {
+		return err
+	}
+	result, err := resources.ChannelInGuild(i.GuildID, channelID).FetchPermissionsFor(ctx, bot.ID)
+	if result.Channel.Value == nil {
 		return domain.Invalid("I couldn't access that channel. Make sure I'm installed in this server and can view it.")
 	}
-
+	channel := result.Channel.Value.Snapshot()
 	if channel.GuildID != i.GuildID || (channel.Type != api.ChannelGuildText && channel.Type != api.ChannelGuildAnnouncement) {
 		return domain.Invalid("Choose a text or announcement channel in this server.")
 	}
 
-	guild, _, err := h.REST.Guilds().Get(ctx, i.GuildID, false)
-	if err != nil {
+	if err != nil && !errors.Is(err, permissions.ErrIncomplete) && !errors.Is(err, permissions.ErrInvalid) {
 		return err
 	}
-	user, _, err := h.REST.Users().GetCurrent(ctx)
-	if err != nil {
-		return err
-	}
-	member, _, err := h.REST.Guilds().GetMember(ctx, i.GuildID, user.ID)
-	if err != nil {
-		return err
-	}
-	bits, err := permissions.Channel(permissions.ChannelInput{
-		Guild:   guild,
-		Member:  member,
-		Channel: channel,
-		Now:     time.Now(),
-	})
-	if err != nil || !bits.Has(api.PermissionViewChannel|api.PermissionSendMessages|api.PermissionEmbedLinks) {
+
+	if err != nil || !result.Permissions.Has(api.PermissionViewChannel|api.PermissionSendMessages|api.PermissionEmbedLinks) {
 		return domain.Invalid("I need View Channel, Send Messages, and Embed Links in that channel.")
 	}
 
 	return nil
 }
 
-func (h *Handler) freeGames(ctx context.Context, i *api.Interaction, options []api.InteractionOption, responder *interactions.Responder, action string) error {
+func (h *Handler) freeGames(ctx context.Context, call commandCall, action string) error {
+	i, responder := call.Interaction, call.Responder
 	if err := responder.DeferEphemeral(ctx); err != nil {
 		return err
 	}
@@ -156,8 +155,15 @@ func (h *Handler) freeGames(ctx context.Context, i *api.Interaction, options []a
 	}
 	defer release()
 
-	channel := stringOption(options, "channel", "")
-	server := channel != "" || boolOption(options, "server")
+	channel, hasChannel, err := call.Arguments.OptionalSnowflake("channel")
+	if err != nil {
+		return domain.Invalid("Choose a channel in this server.")
+	}
+	server, err := call.Arguments.BooleanOr("server", false)
+	if err != nil {
+		return err
+	}
+	server = hasChannel || server
 	scope, err := freeScope(i, user, server)
 	if err != nil {
 		return err
@@ -167,7 +173,11 @@ func (h *Handler) freeGames(ctx context.Context, i *api.Interaction, options []a
 		return h.freeGamesStatus(ctx, scope, responder)
 	}
 
-	sources, err := freegames.ParseSources(stringOption(options, "sources", ""))
+	sourceNames, err := call.Arguments.String("sources")
+	if err != nil {
+		return err
+	}
+	sources, err := freegames.ParseSources(sourceNames)
 	if err != nil {
 		return err
 	}
@@ -175,15 +185,14 @@ func (h *Handler) freeGames(ctx context.Context, i *api.Interaction, options []a
 	enabled := action == "subscribe"
 	destination := user
 	if enabled && server {
-		id, err := snowflake.Parse(channel)
-		if err != nil || id == 0 {
+		if channel == 0 {
 			return domain.Invalid("Choose a channel in this server.")
 		}
 
-		if err := h.verifyFreeChannel(ctx, i, id); err != nil {
+		if err := h.verifyFreeChannel(ctx, i, channel); err != nil {
 			return err
 		}
-		destination = channel
+		destination = channel.String()
 	}
 
 	if err := h.Tracker.Store.SetFreeSubscriptions(ctx, scope, destination, user, sources, enabled); err != nil {

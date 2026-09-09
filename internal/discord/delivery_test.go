@@ -25,6 +25,16 @@ func (s artworkStub) Artwork(context.Context, int64, string) (string, error) {
 	return s.price.CapsuleURL, s.err
 }
 
+func testDMSender(t *testing.T, client *rest.Client, config rest.DMCacheConfig) *rest.DMSender {
+	t.Helper()
+	sender, err := rest.NewDMSender(client, config)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return sender
+}
+
 func TestDiscordDelivery(t *testing.T) {
 	var sent api.MessageCreate
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +65,7 @@ func TestDiscordDelivery(t *testing.T) {
 			BaseURL: server.URL,
 		}),
 	}
+	sender.DM = testDMSender(t, sender.REST, rest.DMCacheConfig{})
 	id, err := sender.Send(t.Context(), "123", "abcdefghijklmnopqrstuvwx", domain.Payload{
 		AppID:    10,
 		Name:     strings.Repeat("🦊", 400),
@@ -122,6 +133,7 @@ func TestDMDeliveryFailures(t *testing.T) {
 						BaseURL: server.URL,
 					}),
 				}
+				sender.DM = testDMSender(t, sender.REST, rest.DMCacheConfig{})
 				var id string
 				var err error
 				if kind == "sale" {
@@ -140,6 +152,16 @@ func TestDMDeliveryFailures(t *testing.T) {
 				remote, ok := errors.AsType[*rest.Error](err)
 				if !ok || remote.StatusCode != http.StatusForbidden || remote.Code != rest.CodeCannotSendMessagesToUser || id != "" {
 					t.Fatalf("delivery lost its Discord failure: id=%q, error=%v", id, err)
+				}
+				wantStage := rest.DMStageOpen
+				wantChannel := api.ID(0)
+				if stage == "send message" {
+					wantStage = rest.DMStageSend
+					wantChannel = 456
+				}
+				dm, ok := errors.AsType[*rest.DMError](err)
+				if !ok || dm.Stage != wantStage || dm.ChannelID != wantChannel || dm.Response == nil || dm.Response.StatusCode != http.StatusForbidden {
+					t.Fatalf("delivery lost its DM failure stage: %v", err)
 				}
 				wantSends := 0
 				if stage == "send message" {

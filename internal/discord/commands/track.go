@@ -62,8 +62,8 @@ func (h *Handler) trackCommand() command {
 					Name:        "list",
 					Description: "List your active tracking rules",
 				},
-				handle: h.trackAction(func(ctx context.Context, _ *api.Interaction, user string, _ []api.InteractionOption, responder *interactions.Responder) error {
-					return h.listTracks(ctx, user, responder)
+				handle: h.trackAction(func(ctx context.Context, user string, call commandCall) error {
+					return h.listTracks(ctx, user, call.Responder)
 				}),
 			},
 			{
@@ -81,43 +81,61 @@ func (h *Handler) trackCommand() command {
 						},
 					},
 				},
-				handle: h.trackAction(func(ctx context.Context, _ *api.Interaction, user string, options []api.InteractionOption, responder *interactions.Responder) error {
-					return h.removeTrack(ctx, user, options, responder)
-				}),
+				handle: h.trackAction(h.removeTrack),
 			},
 		},
 	}
 }
 
-func (h *Handler) trackAction(action func(context.Context, *api.Interaction, string, []api.InteractionOption, *interactions.Responder) error) commandHandler {
-	return func(ctx context.Context, i *api.Interaction, options []api.InteractionOption, responder *interactions.Responder) error {
-		if err := responder.DeferEphemeral(ctx); err != nil {
+func (h *Handler) trackAction(action func(context.Context, string, commandCall) error) commandHandler {
+	return func(ctx context.Context, call commandCall) error {
+		if err := call.Responder.DeferEphemeral(ctx); err != nil {
 			return err
 		}
 
-		user, err := owner(i)
+		user, err := owner(call.Interaction)
 		if err != nil {
 			return err
 		}
 
-		return action(ctx, i, user, options, responder)
+		return action(ctx, user, call)
 	}
 }
 
-func (h *Handler) addTrack(ctx context.Context, i *api.Interaction, user string, options []api.InteractionOption, responder *interactions.Responder) error {
+func (h *Handler) addTrack(ctx context.Context, user string, call commandCall) error {
 	cfg := h.Tracker.Config
 	if !cfg.NewTracksEnabled {
 		return domain.Invalid("New tracking rules are temporarily paused for maintenance.")
 	}
 
+	game, err := call.Arguments.String("game")
+	if err != nil {
+		return err
+	}
+	country, err := call.Arguments.StringOr("country", cfg.DefaultCountry)
+	if err != nil {
+		return err
+	}
+	condition, err := call.Arguments.String("condition")
+	if err != nil {
+		return err
+	}
+	budget, err := call.Arguments.StringOr("budget", "")
+	if err != nil {
+		return err
+	}
+	recurring, err := call.Arguments.BooleanOr("recurring", false)
+	if err != nil {
+		return err
+	}
 	r, p, err := h.Tracker.Add(ctx, tracker.AddRequest{
 		OwnerID:   user,
-		RequestID: i.ID.String(),
-		Game:      stringOption(options, "game", ""),
-		Country:   stringOption(options, "country", cfg.DefaultCountry),
-		Condition: stringOption(options, "condition", ""),
-		Budget:    stringOption(options, "budget", ""),
-		Recurring: boolOption(options, "recurring"),
+		RequestID: call.Interaction.ID.String(),
+		Game:      game,
+		Country:   country,
+		Condition: condition,
+		Budget:    budget,
+		Recurring: recurring,
 	})
 	if err != nil {
 		return err
@@ -140,7 +158,7 @@ func (h *Handler) addTrack(ctx context.Context, i *api.Interaction, user string,
 
 	responseCtx, cancel := responseContext(ctx)
 	defer cancel()
-	_, err = responder.EditOriginalMessage(responseCtx, interactions.ReplaceEmbeds(embed), interactions.ReplaceAllowedMentions(api.AllowedMentions{
+	_, err = call.Responder.EditOriginalMessage(responseCtx, interactions.ReplaceEmbeds(embed), interactions.ReplaceAllowedMentions(api.AllowedMentions{
 		Parse: []string{},
 	}))
 
@@ -227,9 +245,9 @@ func (h *Handler) listTracks(ctx context.Context, user string, responder *intera
 	return nil
 }
 
-func (h *Handler) removeTrack(ctx context.Context, user string, options []api.InteractionOption, responder *interactions.Responder) error {
-	id := stringOption(options, "id", "")
-	if !cuid.IsValidLength(id, 24) {
+func (h *Handler) removeTrack(ctx context.Context, user string, call commandCall) error {
+	id, err := call.Arguments.String("id")
+	if err != nil || !cuid.IsValidLength(id, 24) {
 		return domain.Invalid("Use a rule ID from `/track list`.")
 	}
 
@@ -244,7 +262,7 @@ func (h *Handler) removeTrack(ctx context.Context, user string, options []api.In
 
 	responseCtx, cancel := responseContext(ctx)
 	defer cancel()
-	_, err = responder.EditOriginalMessage(responseCtx, interactions.ReplaceEmbeds(embed), interactions.ReplaceAllowedMentions(api.AllowedMentions{
+	_, err = call.Responder.EditOriginalMessage(responseCtx, interactions.ReplaceEmbeds(embed), interactions.ReplaceAllowedMentions(api.AllowedMentions{
 		Parse: []string{},
 	}))
 

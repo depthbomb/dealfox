@@ -46,7 +46,7 @@ func (s Sender) SendFree(ctx context.Context, kind, destination, id string, offe
 	var message api.Message
 	switch kind {
 	case "dm":
-		message, _, err = s.REST.Users().SendDM(ctx, destinationID, payload, nil)
+		message, _, err = s.DM.Send(ctx, destinationID, payload, nil)
 	case "channel":
 		message, _, err = s.REST.Messages().Create(ctx, destinationID, payload, nil)
 	default:

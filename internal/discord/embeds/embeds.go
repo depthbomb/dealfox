@@ -7,6 +7,7 @@ import (
 	"github.com/depthbomb/dealfox/internal/domain"
 	embedadapter "github.com/depthbomb/tomogo/adapters/embedbuilder"
 	"github.com/depthbomb/tomogo/api"
+	"github.com/depthbomb/tomogo/display"
 	embedbuilder "github.com/tomogo-framework/embed-builder"
 )
 
@@ -34,12 +35,7 @@ func priceText(p domain.Price) string {
 }
 
 func Limit(value string, max int) string {
-	runes := []rune(value)
-	if len(runes) <= max {
-		return value
-	}
-
-	return string(runes[:max-1]) + "…"
+	return display.Truncate(value, max)
 }
 
 func Build(builder *embedbuilder.Builder) (api.Embed, error) {
@@ -63,6 +59,8 @@ func Game(appID int64, capsuleURL string) *embedbuilder.Builder {
 	return builder
 }
 
+// Keep the existing escape set: display.EscapeMarkdown also escapes punctuation
+// and link targets, changing the messages DealFox already formats.
 func EscapeMarkdown(value string) string {
 	return markdownEscaper.Replace(value)
 }

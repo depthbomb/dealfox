@@ -46,3 +46,44 @@ func TestBuildRejectsInvalidEmbeds(t *testing.T) {
 		t.Fatal("oversized embed was accepted")
 	}
 }
+
+func TestLimitPreservesUnicodeBudgetAndEllipsis(t *testing.T) {
+	for _, test := range []struct {
+		value string
+		limit int
+		want  string
+	}{
+		{
+			value: "🦊Sale",
+			limit: 5,
+			want:  "🦊Sale",
+		},
+		{
+			value: "🦊Sale",
+			limit: 3,
+			want:  "🦊S…",
+		},
+		{
+			value: "🦊Sale",
+			limit: 1,
+			want:  "…",
+		},
+		{
+			value: "Sale",
+			limit: 0,
+			want:  "",
+		},
+	} {
+		if got := Limit(test.value, test.limit); got != test.want {
+			t.Fatalf("Limit(%q, %d) = %q, want %q", test.value, test.limit, got, test.want)
+		}
+	}
+}
+
+func TestEscapeMarkdownPreservesExistingPunctuationPolicy(t *testing.T) {
+	got := EscapeMarkdown("Game! 50% off. [Name](https://example.com/a-b) *sale*")
+	want := "Game! 50% off. \\[Name\\](https://example.com/a-b) \\*sale\\*"
+	if got != want {
+		t.Fatalf("escape policy changed: %q", got)
+	}
+}

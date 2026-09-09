@@ -90,23 +90,152 @@ func TestFreeGameDMCommandWorkflow(t *testing.T) {
 }
 
 func TestFreeChannelValidation(t *testing.T) {
-	denied := false
-	wrongGuild := false
+	for _, test := range []struct {
+		name        string
+		channelType api.ChannelType
+		guild       api.ID
+		deny        api.Permissions
+		flags       api.ChannelFlags
+		status      int
+		missingBot  bool
+		want        string
+	}{
+		{
+			name:  "text",
+			guild: 456,
+		},
+		{
+			name:        "announcement",
+			guild:       456,
+			channelType: api.ChannelGuildAnnouncement,
+		},
+		{
+			name:  "wrong guild",
+			guild: 999,
+			want:  "Choose a text or announcement channel in this server.",
+		},
+		{
+			name:        "voice",
+			guild:       456,
+			channelType: api.ChannelGuildVoice,
+			want:        "Choose a text or announcement channel in this server.",
+		},
+		{
+			name:  "missing view",
+			guild: 456,
+			deny:  api.PermissionViewChannel,
+			want:  "I need View Channel, Send Messages, and Embed Links in that channel.",
+		},
+		{
+			name:  "missing send",
+			guild: 456,
+			deny:  api.PermissionSendMessages,
+			want:  "I need View Channel, Send Messages, and Embed Links in that channel.",
+		},
+		{
+			name:  "missing embeds",
+			guild: 456,
+			deny:  api.PermissionEmbedLinks,
+			want:  "I need View Channel, Send Messages, and Embed Links in that channel.",
+		},
+		{
+			name:  "obfuscated",
+			guild: 456,
+			flags: api.ChannelFlagObfuscated,
+			want:  "I need View Channel, Send Messages, and Embed Links in that channel.",
+		},
+		{
+			name:   "inaccessible",
+			guild:  456,
+			status: 403,
+			want:   "I couldn't access that channel. Make sure I'm installed in this server and can view it.",
+		},
+		{
+			name:       "missing bot identity",
+			guild:      456,
+			missingBot: true,
+			want:       "Channel validation is unavailable. Please try again later.",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			channelFetches := 0
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/channels/789":
+					channelFetches++
+					if test.status != 0 {
+						w.WriteHeader(test.status)
+						fmt.Fprint(w, `{"code":50013,"message":"Missing Permissions"}`)
+
+						return
+					}
+					fmt.Fprintf(w, `{"id":"789","guild_id":"%s","type":%d,"flags":%d,"permission_overwrites":[{"id":"456","type":0,"allow":"0","deny":"%d"}]}`, test.guild, test.channelType, test.flags, test.deny)
+				case "/guilds/456":
+					fmt.Fprint(w, `{"id":"456","owner_id":"123","roles":[{"id":"456","position":0,"permissions":"19456"}]}`)
+				case "/users/@me":
+					id := "111"
+					if test.missingBot {
+						id = "0"
+					}
+					fmt.Fprintf(w, `{"id":"%s"}`, id)
+				case "/guilds/456/members/111":
+					fmt.Fprint(w, `{"user":{"id":"111"},"roles":[]}`)
+				default:
+					t.Error("unexpected lookup, possibly invoking user or another guild", r.URL.Path)
+					w.WriteHeader(404)
+				}
+			}))
+			defer server.Close()
+			b := &Handler{
+				REST: rest.New(rest.Config{
+					Token:   "test",
+					BaseURL: server.URL,
+				}),
+			}
+			i := &api.Interaction{
+				GuildID: 456,
+				User: &api.User{
+					ID: 123,
+				},
+			}
+			err := b.verifyFreeChannel(t.Context(), i, 789)
+			if test.want == "" {
+				if err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				message, public := commandErrorMessage(err)
+				if !public || message != test.want {
+					t.Fatalf("permission error = %v, public message = %q", err, message)
+				}
+			}
+			wantFetches := 1
+			if test.missingBot {
+				wantFetches = 0
+			}
+			if channelFetches != wantFetches {
+				t.Fatalf("channel fetched %d times, want %d", channelFetches, wantFetches)
+			}
+		})
+	}
+}
+
+func TestFreeGameChannelOptionDoesNotRequireResolvedData(t *testing.T) {
+	db, _ := testutil.Database(t)
+	h, app := newTestHandler(t, &tracker.Service{
+		Config: testutil.Config(t),
+		Store:  db,
+	})
+	channelFetches := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		switch r.URL.Path {
 		case "/channels/789":
-			guild := "456"
-			if wrongGuild {
-				guild = "999"
-			}
-			deny := 0
-			if denied {
-				deny = int(api.PermissionEmbedLinks)
-			}
-			fmt.Fprintf(w, `{"id":"789","guild_id":"%s","type":0,"permission_overwrites":[{"id":"456","type":0,"allow":"0","deny":"%d"}]}`, guild, deny)
+			channelFetches++
+			fmt.Fprint(w, `{"id":"789","guild_id":"456","type":0,"permission_overwrites":[]}`)
 		case "/guilds/456":
-			fmt.Fprint(w, `{"id":"456","owner_id":"123","roles":[{"id":"456","position":0,"permissions":"19456"}]}`)
+			fmt.Fprint(w, `{"id":"456","owner_id":"123","roles":[{"id":"456","permissions":"19456"}]}`)
 		case "/users/@me":
 			fmt.Fprint(w, `{"id":"111"}`)
 		case "/guilds/456/members/111":
@@ -117,26 +246,24 @@ func TestFreeChannelValidation(t *testing.T) {
 		}
 	}))
 	defer server.Close()
-	client := rest.New(rest.Config{
+	h.REST = rest.New(rest.Config{
 		Token:   "test",
 		BaseURL: server.URL,
 	})
-	b := &Handler{
-		REST: client,
+	i := testkit.CommandInteraction("freegames", testkit.Subcommand("subscribe", testkit.StringOption("sources", "steam"), testkit.SnowflakeOption("channel", api.OptionChannel, 789)))
+	i.GuildID = 456
+	i.Member = &api.GuildMember{
+		User: &api.User{
+			ID: 123,
+		},
+		Permissions: api.PermissionManageGuild,
 	}
-	i := &api.Interaction{
-		GuildID: 456,
-	}
-	if err := b.verifyFreeChannel(t.Context(), i, 789); err != nil {
+	harness := testkit.NewInteractionHarness(i)
+	if err := app.DispatchInteraction(t.Context(), i, harness.Responder); err != nil {
 		t.Fatal(err)
 	}
-	denied = true
-	if err := b.verifyFreeChannel(t.Context(), i, 789); err == nil {
-		t.Fatal("missing Embed Links permission accepted")
-	}
-	denied = false
-	wrongGuild = true
-	if err := b.verifyFreeChannel(t.Context(), i, 789); err == nil {
-		t.Fatal("cross-server channel accepted")
+	subscriptions, err := db.FreeSubscriptions(t.Context(), "guild:456")
+	if err != nil || len(subscriptions) != 1 || subscriptions[0].DestinationID != "789" || channelFetches != 1 {
+		t.Fatalf("typed channel option failed: subscriptions=%v fetches=%d error=%v", subscriptions, channelFetches, err)
 	}
 }

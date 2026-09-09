@@ -16,7 +16,10 @@ import (
 	"github.com/depthbomb/dealfox/internal/tracker"
 	"github.com/depthbomb/dealfox/internal/worker"
 	"github.com/depthbomb/tomogo"
+	"github.com/depthbomb/tomogo/api"
+	"github.com/depthbomb/tomogo/continuation"
 	"github.com/depthbomb/tomogo/gateway"
+	"github.com/depthbomb/tomogo/messagepolicy"
 	"github.com/depthbomb/tomogo/rest"
 	"github.com/depthbomb/tomogo/schedule"
 )
@@ -103,11 +106,20 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, logger *slo
 		Diagnostics: recorder,
 	}
 	app, err := tomogo.New(tomogo.Config{
-		Delivery:                tomogo.DeliveryGateway,
-		Token:                   cfg.BotToken.Release(),
-		Intents:                 gateway.IntentGuilds | gateway.IntentDirectMessages,
-		InteractionErrorHandler: commandHandler.HandleInteractionError,
-		ScheduleShutdownTimeout: scheduleShutdownTimeout,
+		Delivery:                    tomogo.DeliveryGateway,
+		Token:                       cfg.BotToken.Release(),
+		Intents:                     gateway.IntentGuilds | gateway.IntentDirectMessages,
+		InteractionErrorHandler:     commandHandler.HandleInteractionError,
+		ScheduleShutdownTimeout:     scheduleShutdownTimeout,
+		ContinuationShutdownTimeout: 15 * time.Second,
+		Continuations: continuation.Config{
+			MaxActive: 4,
+		},
+		MessageDefaults: messagepolicy.Defaults{
+			AllowedMentions: &api.AllowedMentions{
+				Parse: []string{},
+			},
+		},
 		REST: rest.Config{
 			Observer: diagnostics.RESTObserver{
 				Recorder: recorder,
@@ -129,25 +141,33 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, logger *slo
 	}
 
 	commandHandler.REST = app.REST()
+	dm, err := rest.NewDMSender(app.REST(), rest.DMCacheConfig{
+		Capacity: 1024,
+		TTL:      time.Hour,
+	})
+	if err != nil {
+		return err
+	}
+	commandHandler.DM = dm
 	if err := commandHandler.Register(app); err != nil {
 		return err
 	}
 
+	sender := discord.Sender{
+		REST:  app.REST(),
+		DM:    dm,
+		Steam: steamClient,
+	}
 	w := &worker.Worker{
-		Tracker: service,
-		Sender: discord.Sender{
-			REST:  app.REST(),
-			Steam: steamClient,
-		},
+		Tracker:     service,
+		Sender:      sender,
 		Logger:      logger,
 		Diagnostics: recorder,
 	}
 	freeWorker := &worker.FreeGames{
-		Store:   db,
-		Scanner: freegames.NewClient(recorder),
-		Sender: discord.Sender{
-			REST: app.REST(),
-		},
+		Store:       db,
+		Scanner:     freegames.NewClient(recorder),
+		Sender:      sender,
 		Config:      cfg,
 		Logger:      logger,
 		Diagnostics: recorder,

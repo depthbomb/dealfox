@@ -44,8 +44,8 @@ func (h *Handler) priceCommand() command {
 	}
 }
 
-func (h *Handler) price(ctx context.Context, i *api.Interaction, options []api.InteractionOption, responder *interactions.Responder) error {
-	if err := responder.DeferEphemeral(ctx); err != nil {
+func (h *Handler) price(ctx context.Context, call commandCall) error {
+	if err := call.Responder.DeferEphemeral(ctx); err != nil {
 		return err
 	}
 
@@ -54,7 +54,15 @@ func (h *Handler) price(ctx context.Context, i *api.Interaction, options []api.I
 		return domain.Invalid("Price checks are temporarily paused for maintenance.")
 	}
 
-	p, err := h.Tracker.Price(ctx, stringOption(options, "game", ""), stringOption(options, "country", cfg.DefaultCountry))
+	game, err := call.Arguments.String("game")
+	if err != nil {
+		return err
+	}
+	country, err := call.Arguments.StringOr("country", cfg.DefaultCountry)
+	if err != nil {
+		return err
+	}
+	p, err := h.Tracker.Price(ctx, game, country)
 	if err != nil {
 		return err
 	}
@@ -66,7 +74,7 @@ func (h *Handler) price(ctx context.Context, i *api.Interaction, options []api.I
 
 	responseCtx, cancel := responseContext(ctx)
 	defer cancel()
-	_, err = responder.EditOriginalMessage(responseCtx, interactions.ReplaceEmbeds(embed), interactions.ReplaceAllowedMentions(api.AllowedMentions{
+	_, err = call.Responder.EditOriginalMessage(responseCtx, interactions.ReplaceEmbeds(embed), interactions.ReplaceAllowedMentions(api.AllowedMentions{
 		Parse: []string{},
 	}))
 

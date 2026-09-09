@@ -170,13 +170,22 @@ func TestSpecificRatePreconditions(t *testing.T) {
 }
 
 func TestLimiterConcurrentAdmissionAndExpiry(t *testing.T) {
-	var l limiter
 	var allowed atomic.Int64
 	var group sync.WaitGroup
 	now := time.Now()
+	l, err := preconditions.NewCooldown(preconditions.CooldownConfig{
+		Limit:  20,
+		Window: time.Minute,
+		Now: func() time.Time {
+			return now
+		},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
 	for range 100 {
 		group.Go(func() {
-			err := l.allow("command:123", 20, time.Minute, now)
+			err := l.Allow(t.Context(), "123")
 			if err == nil {
 				allowed.Add(1)
 			} else if !errors.Is(err, preconditions.ErrDenied) {
@@ -189,12 +198,15 @@ func TestLimiterConcurrentAdmissionAndExpiry(t *testing.T) {
 		t.Fatalf("expected 20 admitted commands, got %d", allowed.Load())
 	}
 
-	err := l.allow("command:123", 20, time.Minute, now.Add(time.Minute-time.Nanosecond))
-	if !errors.Is(err, preconditions.ErrDenied) || err.Error() != "Please try again in 1 second." {
+	now = now.Add(time.Minute - time.Nanosecond)
+	err = l.Allow(t.Context(), "123")
+	message, public := commandErrorMessage(err)
+	if !errors.Is(err, preconditions.ErrDenied) || !public || message != "Please try again in 1 second." {
 		t.Fatalf("unexpected last-moment denial: %v", err)
 	}
 
-	if err := l.allow("command:123", 20, time.Minute, now.Add(time.Minute)); err != nil {
+	now = now.Add(time.Nanosecond)
+	if err := l.Allow(t.Context(), "123"); err != nil {
 		t.Fatalf("window did not reopen: %v", err)
 	}
 }

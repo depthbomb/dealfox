@@ -55,6 +55,7 @@ func TestFreeGameDeliveryRouting(t *testing.T) {
 	}
 	sender := Sender{
 		REST: client,
+		DM:   testDMSender(t, client, rest.DMCacheConfig{}),
 	}
 	for _, kind := range []string{"channel", "dm"} {
 		destination := "789"

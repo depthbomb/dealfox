@@ -14,6 +14,7 @@ import (
 
 type Sender struct {
 	REST  *rest.Client
+	DM    *rest.DMSender
 	Steam ArtworkSource
 }
 
@@ -58,7 +59,7 @@ func (s Sender) Send(ctx context.Context, destination, id string, payload domain
 		return "", err
 	}
 
-	message, _, err := s.REST.Users().SendDM(ctx, user, api.MessageCreate{
+	message, _, err := s.DM.Send(ctx, user, api.MessageCreate{
 		Embeds: []api.Embed{embed},
 		AllowedMentions: &api.AllowedMentions{
 			Parse: []string{},

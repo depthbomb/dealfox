@@ -15,6 +15,8 @@ import (
 	"github.com/depthbomb/tomogo"
 	"github.com/depthbomb/tomogo/api"
 	tomogocommands "github.com/depthbomb/tomogo/commands"
+	"github.com/depthbomb/tomogo/continuation"
+	"github.com/depthbomb/tomogo/messagepolicy"
 	"github.com/depthbomb/tomogo/testkit"
 )
 
@@ -48,6 +50,19 @@ func newTestHandler(t *testing.T, service *tracker.Service) (*Handler, *tomogo.A
 	app, err := tomogo.New(tomogo.Config{
 		Token:                   "test-token",
 		InteractionErrorHandler: b.HandleInteractionError,
+		MessageDefaults: messagepolicy.Defaults{
+			AllowedMentions: &api.AllowedMentions{
+				Parse: []string{},
+			},
+		},
+		Continuations: continuation.Config{
+			MaxActive: 4,
+		},
+		Hooks: tomogo.Hooks{
+			Error: func(_ context.Context, event tomogo.ErrorEvent) {
+				t.Logf("framework %s: %v", event.Subsystem, event.Err)
+			},
+		},
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -56,6 +71,13 @@ func newTestHandler(t *testing.T, service *tracker.Service) (*Handler, *tomogo.A
 	if err := b.Register(app); err != nil {
 		t.Fatal(err)
 	}
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		if err := app.Continuations().Shutdown(ctx); err != nil {
+			t.Error(err)
+		}
+	})
 
 	return b, app
 }
@@ -211,22 +233,4 @@ func TestCommandWorkflows(t *testing.T) {
 		price: testutil.Price(20, 0, time.Now()),
 	}
 	dispatch(t, app, "price", testkit.StringOption("game", "20"))
-}
-
-func TestLimiter(t *testing.T) {
-	var l limiter
-	now := time.Now()
-	for range 2 {
-		if err := l.allow("user", 2, time.Minute, now); err != nil {
-			t.Fatal(err)
-		}
-	}
-
-	if err := l.allow("user", 2, time.Minute, now); err == nil {
-		t.Fatal("rate limit was exceeded")
-	}
-
-	if err := l.allow("user", 2, time.Minute, now.Add(time.Minute)); err != nil {
-		t.Fatal("window failed to reset")
-	}
 }

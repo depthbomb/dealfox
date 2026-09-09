@@ -9,8 +9,8 @@ require (
 	entgo.io/ent v0.14.6
 	github.com/depthbomb/cuid2 v0.1.0
 	github.com/depthbomb/envschema v0.1.0
-	github.com/depthbomb/tomogo v0.0.0-20260908223603-bc2726b95b1e
-	github.com/depthbomb/tomogo/adapters/embedbuilder v0.0.0-20260908223603-bc2726b95b1e
+	github.com/depthbomb/tomogo v0.0.0-20260909024953-e64f0d73f6a5
+	github.com/depthbomb/tomogo/adapters/embedbuilder v0.0.0-20260909024953-e64f0d73f6a5
 	github.com/jackc/pgx/v5 v5.10.0
 	github.com/tomogo-framework/embed-builder v0.1.1
 	github.com/tomogo-framework/snowflake v0.1.0

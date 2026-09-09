@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"errors"
-	"fmt"
 	"sync"
 	"time"
 
@@ -12,11 +11,12 @@ import (
 	"github.com/depthbomb/dealfox/internal/domain"
 	"github.com/depthbomb/tomogo/api"
 	"github.com/depthbomb/tomogo/collector"
+	"github.com/depthbomb/tomogo/continuation"
 	"github.com/depthbomb/tomogo/events"
 	"github.com/depthbomb/tomogo/interactions"
 	"github.com/depthbomb/tomogo/preconditions"
+	"github.com/depthbomb/tomogo/registration"
 	"github.com/depthbomb/tomogo/rest"
-	"github.com/tomogo-framework/snowflake"
 )
 
 type pendingDeletions struct {
@@ -41,11 +41,6 @@ func (p *pendingDeletions) begin(user string) (func(), error) {
 		return nil, domain.Invalid("You already have an account deletion in progress. Check your DMs.")
 	}
 
-	// Leave Gateway callback capacity available to receive confirmation replies.
-	if len(p.users) >= 4 {
-		return nil, domain.Invalid("Account deletion is busy. Please try again shortly.")
-	}
-
 	if p.users == nil {
 		p.users = make(map[string]bool)
 	}
@@ -68,12 +63,21 @@ func (c *deletionConfirmation) arm(prompt api.ID) {
 func (c *deletionConfirmation) accepts(event events.MessageCreate) bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	m := event.Data
-	if m == nil || m.Author == nil {
+	if event.Data == nil || event.Data.Author == nil {
 		return false
 	}
+	m := event.Data.Snapshot()
 
 	return c.prompt != 0 && time.Now().Before(c.deadline) && m.ID > c.prompt && m.ChannelID == c.channel && m.Author.ID == c.user && !m.Author.Bot && m.WebhookID == 0 && m.Content == "I agree"
+}
+
+func (c *deletionConfirmation) candidate(event events.MessageCreate) bool {
+	if event.Data == nil || event.Data.Author == nil {
+		return false
+	}
+	m := event.Data.Snapshot()
+
+	return m.ChannelID == c.channel && m.Author.ID == c.user && !m.Author.Bot && m.WebhookID == 0 && m.Content == "I agree"
 }
 
 func (h *Handler) accountAvailable() preconditions.Check {
@@ -114,12 +118,8 @@ func (h *Handler) accountCommand() command {
 	}
 }
 
-func (h *Handler) account(ctx context.Context, i *api.Interaction, _ []api.InteractionOption, responder *interactions.Responder) error {
-	if err := responder.DeferEphemeral(ctx); err != nil {
-		return err
-	}
-
-	user, err := owner(i)
+func (h *Handler) account(ctx context.Context, call commandCall) error {
+	user, err := owner(call.Interaction)
 	if err != nil {
 		return err
 	}
@@ -127,42 +127,123 @@ func (h *Handler) account(ctx context.Context, i *api.Interaction, _ []api.Inter
 	if err != nil {
 		return err
 	}
-	defer finish()
+	transferred := false
+	defer func() {
+		if !transferred {
+			finish()
+		}
+	}()
+	ticket, err := h.continuations.Reserve(ctx, continuation.Options{
+		Timeout: h.Tracker.Config.CommandTimeout,
+		Identity: registration.Identity{
+			Feature: "account",
+			Handler: "delete",
+		},
+	})
+	if errors.Is(err, continuation.ErrFull) {
+		return domain.Invalid("Account deletion is busy. Please try again shortly.")
+	}
 
-	userID, err := snowflake.Parse(user)
 	if err != nil {
 		return err
 	}
-	// Open separately so the confirmation collector is registered before sending.
-	channel, _, err := h.REST.Users().CreateDM(ctx, userID)
+	defer ticket.Rollback()
+	if err := call.Responder.DeferEphemeral(ctx); err != nil {
+		return err
+	}
+	actor, _ := call.Interaction.Actor()
+	userID := actor.ID
+	if err := ticket.Start(call.Responder, func(ctx context.Context, owned *interactions.Continuation) (err error) {
+		defer finish()
+		started := time.Now()
+		returned := false
+		defer func() {
+			failure := err
+			if !returned {
+				failure = &registration.PanicError{}
+			}
+			h.Diagnostics.Observe("continuation", "account.delete", time.Since(started), failure)
+		}()
+		err = h.confirmAccount(ctx, userID, owned)
+		returned = true
+
+		return err
+	}); err != nil {
+		return err
+	}
+	transferred = true
+
+	return nil
+}
+
+func (h *Handler) confirmAccount(ctx context.Context, user api.ID, owned *interactions.Continuation) (result error) {
+	var channel, prompt api.ID
+	title := "Deletion cancelled"
+	text := "Confirmation expired or was interrupted. Your data has not been deleted."
+	defer func() {
+		// Close known prompts and complete the deferred response within one cleanup
+		// budget, including during application shutdown. Never retry an uncertain edit.
+		cleanup, cancel := responseContext(ctx)
+		defer cancel()
+		if result != nil && !errors.Is(result, context.Canceled) && !errors.Is(result, context.DeadlineExceeded) {
+			title = "Request unsuccessful"
+			message, public := commandErrorMessage(result)
+			if !public {
+				reference := cuid.Generate()
+				h.Diagnostics.Reference("account", reference, result)
+				h.Logger.Error("account continuation failed", "reference", reference, "error", result)
+				message = "I couldn't complete that request. Please try again. Reference: `" + reference + "`."
+			}
+			text = message
+		}
+		edit, err := accountEdit(title, text)
+		if err != nil {
+			result = errors.Join(result, err)
+
+			return
+		}
+
+		if prompt != 0 {
+			_, _, err = h.REST.Messages().Edit(cleanup, channel, prompt, edit, nil)
+			result = errors.Join(result, err)
+		}
+
+		if owned.State() != interactions.ResponseUncertain {
+			_, err = owned.EditOriginal(cleanup, edit)
+			result = errors.Join(result, err)
+		}
+	}()
+	var err error
+	if h.DM != nil {
+		channel, _, err = h.DM.Open(ctx, user)
+	} else {
+		var opened api.Channel
+		opened, _, err = h.REST.Users().CreateDM(ctx, user)
+		channel = opened.ID
+	}
 	if err != nil {
 		return deletionDMError(err)
 	}
-
 	confirmation := &deletionConfirmation{
-		user:    userID,
-		channel: channel.ID,
+		user:    user,
+		channel: channel,
 	}
+	// Keep candidates that arrive before the prompt POST returns. Validate the
+	// returned prompt ID and deadline before accepting any candidate as consent.
 	stream, err := collector.Events(ctx, h.events, events.MessageCreateEvent(), collector.Options[events.MessageCreate]{
-		Capacity: 1,
-		MaxItems: 1,
-		Timeout:  time.Minute,
-		Filter:   confirmation.accepts,
+		Capacity: 16,
+		Timeout:  h.Tracker.Config.CommandTimeout,
+		Filter:   confirmation.candidate,
 	})
 	if err != nil {
 		return err
 	}
 	defer stream.Stop(nil)
-
-	if err := accountResponse(ctx, responder, "Check your DMs", "I've opened a DM confirmation. Reply there with exactly `I agree` within 30 seconds of the prompt to delete your data."); err != nil {
-		return err
-	}
-
 	embed, err := embeds.Text("Delete your data?", "This permanently removes your tracking rules, personal free-game subscriptions, and notification records. Server alerts stay active, with your identity removed from their configuration. This cannot be undone.\n\nReply here with exactly `I agree` within **30 seconds** to confirm. Otherwise, nothing will be deleted.")
 	if err != nil {
 		return err
 	}
-	prompt, _, err := h.REST.Messages().Create(ctx, channel.ID, api.MessageCreate{
+	sent, _, err := h.REST.Messages().Create(ctx, channel, api.MessageCreate{
 		Embeds: []api.Embed{embed},
 		AllowedMentions: &api.AllowedMentions{
 			Parse: []string{},
@@ -173,39 +254,59 @@ func (h *Handler) account(ctx context.Context, i *api.Interaction, _ []api.Inter
 	if err != nil {
 		return deletionDMError(err)
 	}
-	confirmation.arm(prompt.ID)
+
+	if sent.ID == 0 || sent.ChannelID != channel {
+		return errors.New("confirmation prompt identity is unavailable")
+	}
+	prompt = sent.ID
+	confirmation.arm(prompt)
 	waitCtx, cancel := context.WithTimeout(ctx, deletionConfirmationTimeout)
-	_, waitErr := stream.Next(waitCtx)
-	cancel()
-	stream.Stop(nil)
-
-	if waitErr != nil {
-		if errors.Is(waitErr, context.DeadlineExceeded) || errors.Is(waitErr, collector.ErrTimeout) || errors.Is(waitErr, context.Canceled) {
-			return h.accountResult(ctx, responder, channel.ID, prompt.ID, "Deletion cancelled", "Confirmation expired or was interrupted. Your data has not been deleted.")
-		}
-
-		return waitErr
-	}
-
-	if err := h.Tracker.DeleteAccount(ctx, user); err != nil {
-		return err
-	}
-
-	return h.accountResult(ctx, responder, channel.ID, prompt.ID, "Data deleted", "Your tracking rules, personal subscriptions, and notification records have been deleted. You can use my commands again to start fresh.")
-}
-
-func accountResponse(ctx context.Context, responder *interactions.Responder, title, text string) error {
-	embed, err := embeds.Text(title, text)
+	defer cancel()
+	edit, err := accountEdit("Check your DMs", "I've opened a DM confirmation. Reply there with exactly `I agree` within 30 seconds of the prompt to delete your data.")
 	if err != nil {
 		return err
 	}
-	responseCtx, cancel := responseContext(ctx)
-	defer cancel()
-	_, err = responder.EditOriginalMessage(responseCtx, interactions.ReplaceEmbeds(embed), interactions.ReplaceAllowedMentions(api.AllowedMentions{
-		Parse: []string{},
-	}))
 
-	return err
+	if _, err := owned.EditOriginal(waitCtx, edit); err != nil {
+		return err
+	}
+	for {
+		reply, err := stream.Next(waitCtx)
+		if err != nil {
+			return err
+		}
+
+		if err := stream.Err(); err != nil {
+			return err
+		}
+
+		if confirmation.accepts(reply) {
+			break
+		}
+	}
+	stream.Stop(nil)
+	if err := waitCtx.Err(); err != nil {
+		return err
+	}
+
+	if err := h.Tracker.DeleteAccount(ctx, user.String()); err != nil {
+		return err
+	}
+	title = "Data deleted"
+	text = "Your tracking rules, personal subscriptions, and notification records have been deleted. You can use my commands again to start fresh."
+
+	return nil
+}
+
+func accountEdit(title, text string) (api.MessageEdit, error) {
+	embed, err := embeds.Text(title, text)
+	if err != nil {
+		return api.MessageEdit{}, err
+	}
+
+	return interactions.EditMessage(interactions.ReplaceEmbeds(embed), interactions.ReplaceAllowedMentions(api.AllowedMentions{
+		Parse: []string{},
+	})), nil
 }
 
 func deletionDMError(err error) error {
@@ -214,24 +315,4 @@ func deletionDMError(err error) error {
 	}
 
 	return err
-}
-
-func (h *Handler) accountResult(ctx context.Context, responder *interactions.Responder, channel, prompt api.ID, title, text string) error {
-	embed, err := embeds.Text(title, text)
-	if err != nil {
-		return err
-	}
-	responseCtx, cancel := responseContext(ctx)
-	defer cancel()
-
-	_, _, editErr := h.REST.Messages().Edit(responseCtx, channel, prompt, interactions.EditMessage(interactions.ReplaceEmbeds(embed)), nil)
-	if editErr != nil {
-		h.Logger.Warn("could not update account confirmation message", "error", editErr)
-	}
-
-	if err := accountResponse(ctx, responder, title, text); err != nil {
-		return fmt.Errorf("account outcome: %s: %w", title, err)
-	}
-
-	return nil
 }

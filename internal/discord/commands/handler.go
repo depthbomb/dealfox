@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/depthbomb/dealfox/internal/diagnostics"
@@ -12,13 +13,15 @@ import (
 	"github.com/depthbomb/tomogo"
 	"github.com/depthbomb/tomogo/api"
 	tomogocommands "github.com/depthbomb/tomogo/commands"
+	"github.com/depthbomb/tomogo/continuation"
 	"github.com/depthbomb/tomogo/events"
-	"github.com/depthbomb/tomogo/interactions"
 	"github.com/depthbomb/tomogo/preconditions"
 	"github.com/depthbomb/tomogo/rest"
 )
 
-type commandHandler func(context.Context, *api.Interaction, []api.InteractionOption, *interactions.Responder) error
+type commandCall = tomogocommands.Call[tomogocommands.Input]
+
+type commandHandler func(context.Context, commandCall) error
 
 type command struct {
 	definition    api.ApplicationCommand
@@ -35,13 +38,16 @@ type subcommand struct {
 
 // Handler owns command registration, execution, and the shared error policy.
 type Handler struct {
-	Tracker     *tracker.Service
-	Logger      *slog.Logger
-	Diagnostics *diagnostics.Recorder
-	REST        *rest.Client
-	limiter     limiter
-	deletions   pendingDeletions
-	events      *events.Registry
+	Tracker       *tracker.Service
+	Logger        *slog.Logger
+	Diagnostics   *diagnostics.Recorder
+	REST          *rest.Client
+	DM            *rest.DMSender
+	cooldownMu    sync.Mutex
+	cooldowns     map[string]*preconditions.Cooldown
+	deletions     pendingDeletions
+	events        *events.Registry
+	continuations *continuation.Manager
 }
 
 func owner(i *api.Interaction) (string, error) {
@@ -51,31 +57,6 @@ func owner(i *api.Interaction) (string, error) {
 	}
 
 	return "", domain.Invalid("Discord did not provide the invoking user.")
-}
-
-func stringOption(options []api.InteractionOption, name, fallback string) string {
-	for _, option := range options {
-		if option.Name == name {
-			value, ok := option.String()
-			if ok {
-				return value
-			}
-		}
-	}
-
-	return fallback
-}
-
-func boolOption(options []api.InteractionOption, name string) bool {
-	for _, option := range options {
-		if option.Name == name {
-			value, ok := option.Boolean()
-
-			return ok && value
-		}
-	}
-
-	return false
 }
 
 func everywhere(def api.ApplicationCommand) api.ApplicationCommand {
@@ -94,24 +75,12 @@ func invoke(handle commandHandler, timeout time.Duration) func(context.Context, 
 	return func(ctx context.Context, call tomogocommands.Call[tomogocommands.Input]) error {
 		workCtx, cancel := context.WithTimeout(ctx, timeout)
 		defer cancel()
-		data, ok := call.Interaction.CommandData()
-		if !ok {
-			return fmt.Errorf("missing command data for /%s", call.Arguments.Command())
-		}
 
-		options := data.Options
-		for range call.Arguments.Path() {
-			options = options[0].Options
-		}
-
-		return handle(workCtx, call.Interaction, options, call.Responder)
+		return handle(workCtx, call)
 	}
 }
 
 func (c command) bind(checks []preconditions.Check, timeout time.Duration) (api.ApplicationCommand, tomogocommands.Handler, error) {
-	decode := func(input tomogocommands.Input) (tomogocommands.Input, error) {
-		return input, nil
-	}
 	checks = append(append([]preconditions.Check{}, checks...), c.preconditions...)
 	if len(c.subcommands) != 0 {
 		tree := tomogocommands.CommandTree{
@@ -125,7 +94,7 @@ func (c command) bind(checks []preconditions.Check, timeout time.Duration) (api.
 			if err != nil {
 				return api.ApplicationCommand{}, nil, err
 			}
-			leaf, err := tomogocommands.NewExecutableSubcommand(branch, decode, invoke(sub.handle, timeout), sub.preconditions...)
+			leaf, err := tomogocommands.NewInputSubcommand(branch, invoke(sub.handle, timeout), sub.preconditions...)
 			if err != nil {
 				return api.ApplicationCommand{}, nil, err
 			}
@@ -140,15 +109,11 @@ func (c command) bind(checks []preconditions.Check, timeout time.Duration) (api.
 		return definition, handler, err
 	}
 
-	binding, err := tomogocommands.NewBinding(c.definition, decode)
+	registered, err := tomogocommands.NewInputCommand(c.definition, invoke(c.handle, timeout))
 	if err != nil {
 		return api.ApplicationCommand{}, nil, err
 	}
-	registered := tomogocommands.Command[tomogocommands.Input]{
-		Binding:       binding,
-		Preconditions: checks,
-		Handler:       invoke(c.handle, timeout),
-	}
+	registered.Preconditions = checks
 	handler, err := registered.CommandHandler()
 
 	return registered.Definition(), handler, err
@@ -175,6 +140,8 @@ func (h *Handler) Definitions() ([]api.ApplicationCommand, error) {
 // Register installs commands for Tomogo's default router without publishing.
 func (h *Handler) Register(app *tomogo.App) error {
 	h.events = app.Events()
+	h.continuations = app.Continuations()
+	app.Commands().SetObserver(h.observeCommand)
 	cfg := h.Tracker.Config
 	sharedLimit := h.rateLimit("command", cfg.CommandRateLimit, cfg.CommandRateWindow)
 	for _, c := range h.commands() {
@@ -183,7 +150,7 @@ func (h *Handler) Register(app *tomogo.App) error {
 			return fmt.Errorf("bind /%s: %w", c.definition.Name, err)
 		}
 
-		if err := app.Commands().Register(definition, h.observeCommand(definition.Name, handler)); err != nil {
+		if err := app.Commands().Register(definition, handler); err != nil {
 			return fmt.Errorf("register /%s: %w", c.definition.Name, err)
 		}
 	}

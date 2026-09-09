@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	cuid "github.com/depthbomb/cuid2"
@@ -31,6 +32,14 @@ func commandErrorMessage(failure error) (string, bool) {
 		return failure.Message, true
 	case *preconditions.Failure:
 		return failure.Error(), true
+	case *preconditions.CooldownError:
+		seconds := (failure.RetryAfter-1)/time.Second + 1
+		unit := "seconds"
+		if seconds == 1 {
+			unit = "second"
+		}
+
+		return fmt.Sprintf("Please try again in %d %s.", seconds, unit), true
 	case interface{ Unwrap() []error }:
 		var single error
 		for _, child := range failure.Unwrap() {
