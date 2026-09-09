@@ -43,6 +43,7 @@ type Handler struct {
 	Diagnostics   *diagnostics.Recorder
 	REST          *rest.Client
 	DM            *rest.DMSender
+	Published     *tomogocommands.Catalog
 	cooldownMu    sync.Mutex
 	cooldowns     map[string]*preconditions.Cooldown
 	deletions     pendingDeletions

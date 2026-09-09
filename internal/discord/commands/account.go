@@ -222,7 +222,7 @@ func (h *Handler) confirmAccount(ctx context.Context, user api.ID, owned *intera
 		channel = opened.ID
 	}
 	if err != nil {
-		return deletionDMError(err)
+		return h.deletionDMError(err)
 	}
 	confirmation := &deletionConfirmation{
 		user:    user,
@@ -252,7 +252,7 @@ func (h *Handler) confirmAccount(ctx context.Context, user api.ID, owned *intera
 		EnforceNonce: true,
 	}, nil)
 	if err != nil {
-		return deletionDMError(err)
+		return h.deletionDMError(err)
 	}
 
 	if sent.ID == 0 || sent.ChannelID != channel {
@@ -309,9 +309,9 @@ func accountEdit(title, text string) (api.MessageEdit, error) {
 	})), nil
 }
 
-func deletionDMError(err error) error {
+func (h *Handler) deletionDMError(err error) error {
 	if remote, ok := errors.AsType[*rest.Error](err); ok && remote.StatusCode == 403 {
-		return domain.Invalid("I couldn't send the confirmation DM. Allow DMs from me, then run /account delete again. Nothing was deleted.")
+		return domain.Invalid("I couldn't send the confirmation DM. Allow DMs from me, then run " + h.mention("account", "delete") + " again. Nothing was deleted.")
 	}
 
 	return err

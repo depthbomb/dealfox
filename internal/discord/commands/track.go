@@ -248,7 +248,7 @@ func (h *Handler) listTracks(ctx context.Context, user string, responder *intera
 func (h *Handler) removeTrack(ctx context.Context, user string, call commandCall) error {
 	id, err := call.Arguments.String("id")
 	if err != nil || !cuid.IsValidLength(id, 24) {
-		return domain.Invalid("Use a rule ID from `/track list`.")
+		return domain.Invalid("Use a rule ID from " + h.mention("track", "list") + ".")
 	}
 
 	if err := h.Tracker.Remove(ctx, user, id); err != nil {

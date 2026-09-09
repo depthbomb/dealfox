@@ -33,21 +33,9 @@ func publish(ctx context.Context, cfg *config.Config, guild string, confirm bool
 	client := rest.New(rest.Config{
 		Token: cfg.BotToken.Release(),
 	})
-	var applicationID api.ID
-	if cfg.ApplicationID != nil {
-		applicationID, err = snowflake.Parse(*cfg.ApplicationID)
-	} else {
-		application, _, getErr := client.Applications().GetCurrent(ctx)
-		applicationID = application.ID
-		err = getErr
-	}
-
+	applicationID, err := applicationID(ctx, cfg, client)
 	if err != nil {
 		return err
-	}
-
-	if applicationID == 0 {
-		return errors.New("application ID must be a positive Discord snowflake")
 	}
 
 	commandHandler := commands.Handler{

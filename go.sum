@@ -26,10 +26,10 @@ github.com/depthbomb/duration v1.0.1 h1:gTStaqzeIsHC03T3iMzxh89+xOqncjh1NzO/5XN6
 github.com/depthbomb/duration v1.0.1/go.mod h1:ei8Ufv+dHXbYgMR8hoxGu8mQfyJx81Lfz2XDujlR10M=
 github.com/depthbomb/envschema v0.1.0 h1:fM2FyZGftLCzGnNb/clMJCO7/z0Fo484r91hqjuXnA4=
 github.com/depthbomb/envschema v0.1.0/go.mod h1:2mQ/gPkIjSCIwClJqbszyZvFQJhHFml8wan619L/IA0=
-github.com/depthbomb/tomogo v0.0.0-20260909024953-e64f0d73f6a5 h1:DOft5ZYjBPMxGP/6zGT1q8sP8ZcvHoy/Xwo/0hiJSYo=
-github.com/depthbomb/tomogo v0.0.0-20260909024953-e64f0d73f6a5/go.mod h1:9jZePvBVNPBQ0C3Ar4um0enzwX8O7Yu7xZOulT4UUts=
-github.com/depthbomb/tomogo/adapters/embedbuilder v0.0.0-20260909024953-e64f0d73f6a5 h1:ZGUj9fXUu0zByUqkT3mGsLQdC7O66XoIWe5JL2rnX1A=
-github.com/depthbomb/tomogo/adapters/embedbuilder v0.0.0-20260909024953-e64f0d73f6a5/go.mod h1:Rox/84tUS8zFHcxqsHrg3NZRiCRbOSV6atKTIHrxk3U=
+github.com/depthbomb/tomogo v0.0.0-20260909051834-75d50484323a h1:36zwOvYHB3hQRZl7InsdW+J/+z4C10nBaJq1Hbuyx7c=
+github.com/depthbomb/tomogo v0.0.0-20260909051834-75d50484323a/go.mod h1:9jZePvBVNPBQ0C3Ar4um0enzwX8O7Yu7xZOulT4UUts=
+github.com/depthbomb/tomogo/adapters/embedbuilder v0.0.0-20260909051834-75d50484323a h1:SEt7S3A8Vl9bvGbo2AsyNsSzJTYlI9QAKpdkVNLkBKU=
+github.com/depthbomb/tomogo/adapters/embedbuilder v0.0.0-20260909051834-75d50484323a/go.mod h1:Rox/84tUS8zFHcxqsHrg3NZRiCRbOSV6atKTIHrxk3U=
 github.com/fatih/color v1.18.0 h1:S8gINlzdQ840/4pfAwic/ZE0djQEH3wM94VfqLTZcOM=
 github.com/fatih/color v1.18.0/go.mod h1:4FelSpRwEGDpQ12mAdzqdOukCy4u8WUtOY6lkT/6HfU=
 github.com/go-openapi/inflect v0.19.0 h1:9jCH9scKIbHeV9m12SmPilScz6krDxKRasNNSNPXu/4=

@@ -120,6 +120,10 @@ func (h *Handler) verifyFreeChannel(ctx context.Context, i *api.Interaction, cha
 	}
 	result, err := resources.ChannelInGuild(i.GuildID, channelID).FetchPermissionsFor(ctx, bot.ID)
 	if result.Channel.Value == nil {
+		if errors.Is(err, permissions.ErrInvalid) {
+			return domain.Invalid("Choose a text or announcement channel in this server.")
+		}
+
 		return domain.Invalid("I couldn't access that channel. Make sure I'm installed in this server and can view it.")
 	}
 	channel := result.Channel.Value.Snapshot()

@@ -92,8 +92,10 @@ func TestFreeGameDMCommandWorkflow(t *testing.T) {
 func TestFreeChannelValidation(t *testing.T) {
 	for _, test := range []struct {
 		name        string
+		channelID   api.ID
 		channelType api.ChannelType
 		guild       api.ID
+		lookupGuild api.ID
 		deny        api.Permissions
 		flags       api.ChannelFlags
 		status      int
@@ -113,6 +115,18 @@ func TestFreeChannelValidation(t *testing.T) {
 			name:  "wrong guild",
 			guild: 999,
 			want:  "Choose a text or announcement channel in this server.",
+		},
+		{
+			name:      "wrong channel identity",
+			channelID: 999,
+			guild:     456,
+			want:      "Choose a text or announcement channel in this server.",
+		},
+		{
+			name:        "wrong guild lookup identity",
+			guild:       456,
+			lookupGuild: 999,
+			want:        "I need View Channel, Send Messages, and Embed Links in that channel.",
 		},
 		{
 			name:        "voice",
@@ -159,6 +173,16 @@ func TestFreeChannelValidation(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			channelFetches := 0
+			channelID := test.channelID
+			if channelID == 0 {
+				channelID = 789
+			}
+
+			guildID := test.lookupGuild
+			if guildID == 0 {
+				guildID = 456
+			}
+
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
@@ -170,9 +194,9 @@ func TestFreeChannelValidation(t *testing.T) {
 
 						return
 					}
-					fmt.Fprintf(w, `{"id":"789","guild_id":"%s","type":%d,"flags":%d,"permission_overwrites":[{"id":"456","type":0,"allow":"0","deny":"%d"}]}`, test.guild, test.channelType, test.flags, test.deny)
+					fmt.Fprintf(w, `{"id":"%s","guild_id":"%s","type":%d,"flags":%d,"permission_overwrites":[{"id":"456","type":0,"allow":"0","deny":"%d"}]}`, channelID, test.guild, test.channelType, test.flags, test.deny)
 				case "/guilds/456":
-					fmt.Fprint(w, `{"id":"456","owner_id":"123","roles":[{"id":"456","position":0,"permissions":"19456"}]}`)
+					fmt.Fprintf(w, `{"id":"%s","owner_id":"123","roles":[{"id":"456","position":0,"permissions":"19456"}]}`, guildID)
 				case "/users/@me":
 					id := "111"
 					if test.missingBot {

@@ -82,7 +82,7 @@ type Recorder struct {
 var names = map[string][]string{
 	"continuation": {"account.delete"},
 	"command":      {"price", "about", "track", "track.add", "track.list", "track.remove", "freegames", "freegames.subscribe", "freegames.unsubscribe", "freegames.status", "account", "account.delete"},
-	"job":          {"poll", "deliver", "catalog", "retention", "free-game-discovery", "free-game-delivery", "free-game-retention", "diagnostics"},
+	"job":          {"poll", "deliver", "catalog", "retention", "free-game-discovery", "free-game-delivery", "free-game-retention", "presence", "diagnostics"},
 	"limit":        {"command", "price", "add", "account", "freegames"},
 	"http":         {"steam", "discord", "freegames"},
 	"cache":        {"price-hit", "price-miss", "artwork-hit", "artwork-miss", "steam-circuit-open"},

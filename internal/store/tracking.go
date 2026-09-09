@@ -23,6 +23,11 @@ type AddRequest struct {
 	Interval  time.Duration
 }
 
+// TrackedGameCount counts distinct Steam apps with at least one enabled rule.
+func (s *Store) TrackedGameCount(ctx context.Context) (int, error) {
+	return s.Client.App.Query().Where(app.HasTargetsWith(target.HasRulesWith(rule.Enabled(true)))).Count(ctx)
+}
+
 func (s *Store) Add(ctx context.Context, req AddRequest) (*ent.Rule, error) {
 	var result *ent.Rule
 	err := s.write(ctx, func(c *ent.Client) error {

@@ -141,6 +141,10 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, logger *slo
 	}
 
 	commandHandler.REST = app.REST()
+	commandHandler.Published, err = commandCatalog(ctx, cfg, app.REST())
+	if err != nil {
+		logger.Warn("command mentions unavailable; using plain command names", "error", err)
+	}
 	dm, err := rest.NewDMSender(app.REST(), rest.DMCacheConfig{
 		Capacity: 1024,
 		TTL:      time.Hour,
@@ -173,6 +177,9 @@ func serve(ctx context.Context, cfg *config.Config, db *store.Store, logger *slo
 		Diagnostics: recorder,
 	}
 	jobs := workerJobs(cfg, w, freeWorker)
+	jobs = append(jobs, presenceJob(db.TrackedGameCount, func(ctx context.Context, presence gateway.Presence) error {
+		return publishPresence(ctx, app.Gateway(), presence)
+	}))
 	if recorder != nil {
 		jobs = append(jobs, diagnosticJob(recorder, db, app.Schedules()))
 	}
