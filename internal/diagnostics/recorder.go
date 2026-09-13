@@ -21,7 +21,7 @@ import (
 	"github.com/depthbomb/tomogo/preconditions"
 	"github.com/depthbomb/tomogo/registration"
 	"github.com/depthbomb/tomogo/rest"
-	"github.com/jackc/pgx/v5/pgconn"
+	"modernc.org/sqlite"
 )
 
 type Options struct {
@@ -31,12 +31,12 @@ type Options struct {
 }
 
 type measurement struct {
-	Category string `json:"category"`
-	Name     string `json:"name"`
-	Outcome  string `json:"outcome"`
-	Status   int    `json:"http_status,omitempty"`
-	Code     int    `json:"discord_code,omitempty"`
-	SQLState string `json:"sqlstate,omitempty"`
+	Category   string `json:"category"`
+	Name       string `json:"name"`
+	Outcome    string `json:"outcome"`
+	Status     int    `json:"http_status,omitempty"`
+	Code       int    `json:"discord_code,omitempty"`
+	SQLiteCode int    `json:"sqlite_code,omitempty"`
 }
 
 type aggregate struct {
@@ -106,7 +106,6 @@ var gaugeNames = []string{
 var referencePattern = regexp.MustCompile(`^[a-z][a-z0-9]{23}$`)
 var revisionPattern = regexp.MustCompile(`^[a-f0-9]{40,64}$`)
 var versionPattern = regexp.MustCompile(`^(v[0-9][a-zA-Z0-9.+-]{0,100}|\(devel\))$`)
-var sqlStatePattern = regexp.MustCompile(`^[0-9A-Z]{5}$`)
 
 func classify(err error) (string, int, int) {
 	if err == nil {
@@ -162,8 +161,8 @@ func safeMeasurement(category, name string, err error) measurement {
 		Status:   status,
 		Code:     code,
 	}
-	if database, ok := errors.AsType[*pgconn.PgError](err); ok && sqlStatePattern.MatchString(database.Code) {
-		op.SQLState = database.Code
+	if database, ok := errors.AsType[*sqlite.Error](err); ok {
+		op.SQLiteCode = database.Code()
 	}
 
 	return op

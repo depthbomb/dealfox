@@ -9,9 +9,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent/rule"
 	"github.com/depthbomb/dealfox/internal/domain"
 	"github.com/depthbomb/dealfox/internal/store"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
 	"github.com/depthbomb/dealfox/internal/tracker"
 	"github.com/depthbomb/tomogo/api"
@@ -254,7 +254,7 @@ func TestAccountBuffersEarlyAgreementAndRejectsUncertainPrompt(t *testing.T) {
 				if pendingAccounts(h) != 0 {
 					t.Fatal("confirmation retained user after completion")
 				}
-				count := db.Client.Rule.Query().Where(rule.OwnerIDEQ("123")).CountX(t.Context())
+				count := testutil.Must(db.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq("123")).Count(t.Context()))
 				if (count == 0) != (outcome == "success") {
 					t.Fatalf("%s: rules remaining = %d", outcome, count)
 				}

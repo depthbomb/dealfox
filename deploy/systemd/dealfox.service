@@ -1,8 +1,7 @@
 [Unit]
 Description=DealFox Discord bot
 Wants=network-online.target
-After=network-online.target postgresql.service
-Requires=postgresql.service
+After=network-online.target
 
 [Service]
 Type=simple
@@ -10,6 +9,7 @@ User=lamb
 Group=lamb
 WorkingDirectory=/home/lamb/dealfox
 StateDirectory=dealfox
+Environment=DATABASE_PATH=/var/lib/dealfox/dealfox.db
 Environment=DIAGNOSTICS_DIRECTORY=/var/lib/dealfox/diagnostics
 ExecStartPre=/home/lamb/dealfox/current --config-dir /home/lamb/dealfox database status
 ExecStart=/home/lamb/dealfox/current --config-dir /home/lamb/dealfox serve

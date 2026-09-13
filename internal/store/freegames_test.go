@@ -4,9 +4,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent/freedelivery"
 	"github.com/depthbomb/dealfox/internal/freegames"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
+	"github.com/depthbomb/nook"
 )
 
 func freeOffer() freegames.Offer {
@@ -91,7 +92,7 @@ func TestFreeSubscriptionsOutboxAndIsolation(t *testing.T) {
 		t.Fatal(err)
 	}
 	delivery, err := db.ClaimFree(ctx)
-	if err != nil || delivery == nil || delivery.DestinationID != "888" || delivery.DestinationKind != freedelivery.DestinationKindChannel {
+	if err != nil || delivery == nil || delivery.DestinationID != "888" || delivery.DestinationKind != models.FreeDeliveryDestinationKindChannel {
 		t.Fatalf("unsubscribe or channel move failed: %+v %v", delivery, err)
 	}
 
@@ -103,7 +104,7 @@ func TestFreeSubscriptionsOutboxAndIsolation(t *testing.T) {
 		t.Fatalf("restart recovery failed: %+v %v", delivery, err)
 	}
 
-	if err := db.FinishFree(ctx, delivery.ID, freedelivery.StatusSent, time.Now(), "message", ""); err != nil {
+	if err := db.FinishFree(ctx, delivery.ID, models.FreeDeliveryStatusSent, time.Now(), "message", ""); err != nil {
 		t.Fatal(err)
 	}
 	if err := db.RecordFreeScan(ctx, "gog", freegames.Result{
@@ -149,7 +150,7 @@ func TestFreeScanFailureDoesNotEraseOffersAndExpiryCancels(t *testing.T) {
 		t.Fatal(err)
 	}
 	offer.EndsAt = time.Now().Add(-time.Second)
-	if err := db.Client.FreeOffer.UpdateOne(saved).SetPayload(offer).Exec(ctx); err != nil {
+	if _, err := db.Client.FreeOffer.UpdateOneID(saved.ID).SetPayload(nook.JSON[freegames.Offer]{Data: offer}).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 	if next, err := db.ClaimFree(ctx); err != nil || next != nil {

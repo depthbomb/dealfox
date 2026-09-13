@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/depthbomb/argon"
 	"github.com/depthbomb/dealfox/internal/config"
 	"github.com/depthbomb/dealfox/internal/discord/commands"
 	"github.com/depthbomb/dealfox/internal/tracker"
@@ -13,7 +14,6 @@ import (
 	tomogocommands "github.com/depthbomb/tomogo/commands"
 	"github.com/depthbomb/tomogo/rest"
 	"github.com/tomogo-framework/snowflake"
-	"github.com/urfave/cli/v3"
 )
 
 func publish(ctx context.Context, cfg *config.Config, guild string, confirm bool, output io.Writer) error {
@@ -90,22 +90,22 @@ func publish(ctx context.Context, cfg *config.Config, guild string, confirm bool
 	return nil
 }
 
-func publicationCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "commands",
-		Usage: "Compare slash commands, or replace the selected scope with --confirm",
-		Flags: []cli.Flag{
-			&cli.StringFlag{
+func publicationCommand() *argon.Command {
+	return &argon.Command{
+		Name:    "commands",
+		Summary: "Compare slash commands, or replace the selected scope with --confirm",
+		Options: []*argon.Option{
+			argon.StringOption(argon.Option{
 				Name:  "guild",
 				Usage: "Development guild ID; omit for global commands",
-			},
-			&cli.BoolFlag{
+			}),
+			argon.BoolOption(argon.Option{
 				Name:  "confirm",
 				Usage: "Replace all commands in the selected scope",
-			},
+			}),
 		},
-		Action: withConfig(func(ctx context.Context, cmd *cli.Command, cfg *config.Config) error {
-			return publish(ctx, cfg, cmd.String("guild"), cmd.Bool("confirm"), cmd.Root().Writer)
+		Run: withConfig(func(cx *argon.Context, cfg *config.Config) error {
+			return publish(cx.Context, cfg, cx.Invocation.String("guild"), cx.Invocation.Bool("confirm"), cx.IO.Out)
 		}),
 	}
 }

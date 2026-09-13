@@ -1,91 +1,86 @@
 package app
 
 import (
-	"context"
 	"errors"
-	"fmt"
 	"io"
 	"log/slog"
 
+	"github.com/depthbomb/argon"
 	"github.com/depthbomb/dealfox/internal/config"
 	"github.com/depthbomb/dealfox/internal/steam"
 	"github.com/depthbomb/dealfox/internal/store"
-	"github.com/urfave/cli/v3"
 )
 
-type configAction func(context.Context, *cli.Command, *config.Config) error
-type storeAction func(context.Context, *cli.Command, *config.Config, *store.Store) error
+type configAction func(*argon.Context, *config.Config) error
+type storeAction func(*argon.Context, *config.Config, *store.Store) error
 
-func withConfig(action configAction) cli.ActionFunc {
-	return func(ctx context.Context, cmd *cli.Command) error {
-		if cmd.Args().Len() != 0 {
-			return fmt.Errorf("unexpected argument %q", cmd.Args().First())
-		}
-
-		cfg, err := loadConfig(cmd.String("config-dir"))
+func withConfig(action configAction) argon.Handler {
+	return func(cx *argon.Context) error {
+		cfg, err := loadConfig(cx.Invocation.String("config-dir"))
 		if err != nil {
 			return err
 		}
 
-		return action(ctx, cmd, &cfg)
+		return action(cx, &cfg)
 	}
 }
 
-func withStore(action storeAction) cli.ActionFunc {
-	return withConfig(func(ctx context.Context, cmd *cli.Command, cfg *config.Config) error {
-		if cfg.DatabaseURL == nil {
-			return errors.New("DATABASE_URL is required")
+func withStore(action storeAction) argon.Handler {
+	return withConfig(func(cx *argon.Context, cfg *config.Config) error {
+		if cfg.DatabasePath == "" {
+			return errors.New("DATABASE_PATH is required")
 		}
 
-		db, err := store.Open(ctx, cfg.DatabaseURL.Release())
+		db, err := store.Open(cx.Context, cfg.DatabasePath)
 		if err != nil {
 			return err
 		}
 		defer db.Close()
 
-		if err := db.ValidateMigrations(ctx); err != nil {
+		if err := db.ValidateMigrations(cx.Context); err != nil {
 			return err
 		}
 
-		return action(ctx, cmd, cfg, db)
+		return action(cx, cfg, db)
 	})
 }
 
-func New(output io.Writer, logger *slog.Logger) *cli.Command {
-	return &cli.Command{
-		Name:           "dealfox",
-		Usage:          "Steam sale alerts and free-to-keep game notifications",
-		Description:    "Configuration uses envschema. Set DATABASE_URL (postgres:// syntax), BOT_TOKEN, and STEAM_WEB_API_KEY for serve. Process environment overrides .env and .env.local next to the executable.",
-		Writer:         output,
-		ErrWriter:      output,
-		ExitErrHandler: func(context.Context, *cli.Command, error) {},
-		Flags: []cli.Flag{&cli.StringFlag{
+// New registers commands without loading configuration. Callers supply help text.
+func New(output io.Writer, logger *slog.Logger) *argon.App {
+	application := argon.New("dealfox")
+	application.IO.Out = output
+	application.Root.Summary = "Steam sale alerts and free-to-keep game notifications"
+	application.Root.Description = "Configuration uses envschema. Set DATABASE_PATH (local SQLite file path), BOT_TOKEN, and STEAM_WEB_API_KEY for serve. Process environment overrides .env and .env.local next to the executable."
+	application.Options = []*argon.Option{
+		argon.StringOption(argon.Option{
 			Name:  "config-dir",
 			Usage: "Directory containing .env and .env.local; defaults to the executable directory",
-		}},
-		Commands: []*cli.Command{
-			{
-				Name:  "serve",
-				Usage: "Start the Discord bot and background workers",
-				Action: withStore(func(ctx context.Context, _ *cli.Command, cfg *config.Config, db *store.Store) error {
-					return serve(ctx, cfg, db, logger)
-				}),
-			},
-			databaseCommand(),
-			{
-				Name:  "catalog",
-				Usage: "Maintain the Steam game and DLC catalog",
-				Commands: []*cli.Command{{
-					Name:  "sync",
-					Usage: "Synchronize the Steam catalog",
-					Action: withStore(func(ctx context.Context, _ *cli.Command, cfg *config.Config, db *store.Store) error {
-						return steam.New(cfg).Catalog(ctx, db.UpsertCatalog)
-					}),
-				}},
-			},
-			publicationCommand(),
-			deliveryCommands(),
-			freeGamesCommands(),
-		},
+		}),
 	}
+	application.Root.Commands = []*argon.Command{
+		{
+			Name:    "serve",
+			Summary: "Start the Discord bot and background workers",
+			Run: withStore(func(cx *argon.Context, cfg *config.Config, db *store.Store) error {
+				return serve(cx.Context, cfg, db, logger)
+			}),
+		},
+		databaseCommand(),
+		{
+			Name:    "catalog",
+			Summary: "Maintain the Steam game and DLC catalog",
+			Commands: []*argon.Command{{
+				Name:    "sync",
+				Summary: "Synchronize the Steam catalog",
+				Run: withStore(func(cx *argon.Context, cfg *config.Config, db *store.Store) error {
+					return steam.New(cfg).Catalog(cx.Context, db.UpsertCatalog)
+				}),
+			}},
+		},
+		publicationCommand(),
+		deliveryCommands(),
+		freeGamesCommands(),
+	}
+
+	return application
 }

@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent/freedelivery"
 	"github.com/depthbomb/dealfox/internal/freegames"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
 	"github.com/depthbomb/tomogo/rest"
 )
@@ -89,7 +89,7 @@ func TestFreeWorkerPollingRetryAndPermanentFailure(t *testing.T) {
 	if err := w.Dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if count := db.Client.FreeDelivery.Query().Where(freedelivery.StatusEQ(freedelivery.StatusDead)).CountX(ctx); count != 1 {
+	if count := testutil.Must(db.Client.FreeDelivery.Query().Where(models.FreeDeliveryColumns.Status.Eq(models.FreeDeliveryStatusDead)).Count(ctx)); count != 1 {
 		t.Fatal("permanent failure did not dead-letter")
 	}
 
@@ -97,18 +97,18 @@ func TestFreeWorkerPollingRetryAndPermanentFailure(t *testing.T) {
 	if err := w.Dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
-	d := db.Client.FreeDelivery.Query().Where(freedelivery.StatusEQ(freedelivery.StatusRetry)).OnlyX(ctx)
+	d := testutil.Must(db.Client.FreeDelivery.Query().Where(models.FreeDeliveryColumns.Status.Eq(models.FreeDeliveryStatusRetry)).Only(ctx))
 	if !d.NextAttemptAt.After(time.Now()) {
 		t.Fatal("transient failure did not back off")
 	}
-	if err := db.Client.FreeDelivery.UpdateOne(d).SetNextAttemptAt(time.Now()).Exec(ctx); err != nil {
+	if _, err := db.Client.FreeDelivery.UpdateOneID(d.ID).SetNextAttemptAt(time.Now()).Exec(ctx); err != nil {
 		t.Fatal(err)
 	}
 	fake.err = nil
 	if err := w.Dispatch(ctx); err != nil {
 		t.Fatal(err)
 	}
-	if count := db.Client.FreeDelivery.Query().Where(freedelivery.StatusEQ(freedelivery.StatusSent)).CountX(ctx); count != 1 {
+	if count := testutil.Must(db.Client.FreeDelivery.Query().Where(models.FreeDeliveryColumns.Status.Eq(models.FreeDeliveryStatusSent)).Count(ctx)); count != 1 {
 		t.Fatal("retry did not complete")
 	}
 }

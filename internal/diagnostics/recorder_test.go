@@ -15,10 +15,10 @@ import (
 	"testing/synctest"
 	"time"
 
+	"github.com/depthbomb/nook"
 	"github.com/depthbomb/tomogo/preconditions"
 	"github.com/depthbomb/tomogo/registration"
 	"github.com/depthbomb/tomogo/rest"
-	"github.com/jackc/pgx/v5/pgconn"
 )
 
 type memorySink struct {
@@ -97,10 +97,16 @@ func TestRecorderSummarizesAndRedacts(t *testing.T) {
 		Value: "private-panic",
 		Stack: []byte("private-stack"),
 	})
-	r.Observe("job", "retention", 0, &pgconn.PgError{
-		Code:   "23505",
-		Detail: "private-database-row",
-	})
+	db, err := nook.Create(t.Context(), filepath.Join(t.TempDir(), "diagnostics.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	_, databaseErr := db.ExecContext(t.Context(), "SELECT private_database_row FROM missing_table")
+	if databaseErr == nil {
+		t.Fatal("expected database failure")
+	}
+	r.Observe("job", "retention", 0, databaseErr)
 	reference := "abcdefghijklmnopqrstuvwx"
 	r.Reference("price", reference, errors.New("private-error"))
 	r.Reference("price", "private-invalid-reference", errors.New("private-error"))

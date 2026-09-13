@@ -2,28 +2,28 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent"
-	"github.com/depthbomb/dealfox/ent/rule"
-	"github.com/depthbomb/dealfox/ent/target"
 	"github.com/depthbomb/dealfox/internal/domain"
+	"github.com/depthbomb/dealfox/internal/store/models"
+	"github.com/depthbomb/nook"
 )
 
-func apply(ctx context.Context, c *ent.Client, t *ent.Target, p domain.Price, interval time.Duration, onlyRule string) error {
+func apply(ctx context.Context, c *models.Client, t *models.Target, p domain.Price, interval time.Duration, onlyRule string) error {
 	if p.AppID != t.AppID || p.Country != t.Country {
 		return errors.New("observation does not match its target")
 	}
 
-	o, err := c.Observation.Create().SetTargetID(t.ID).SetObservedAt(p.ObservedAt).SetPrice(p).Save(ctx)
+	o, err := c.Observation.Create().SetTargetID(t.ID).SetObservedAt(p.ObservedAt).SetPrice(nook.JSON[domain.Price]{Data: p}).Save(ctx)
 	if err != nil {
 		return err
 	}
 
-	query := c.Rule.Query().Where(rule.TargetIDEQ(t.ID), rule.Enabled(true)).ForUpdate()
+	query := c.Rule.Query().Where(models.RuleColumns.TargetID.Eq(t.ID), models.RuleColumns.Enabled.Eq(true))
 	if onlyRule != "" {
-		query.Where(rule.IDEQ(onlyRule))
+		query = query.Where(models.RuleColumns.ID.Eq(onlyRule))
 	}
 
 	rules, err := query.All(ctx)
@@ -56,12 +56,12 @@ func apply(ctx context.Context, c *ent.Client, t *ent.Target, p domain.Price, in
 				Discount:  *p.Discount,
 				Recurring: r.Recurring,
 			}
-			e, err := c.Event.Create().SetRuleID(r.ID).SetObservationID(o.ID).SetPayload(payload).Save(ctx)
+			e, err := c.Event.Create().SetRuleID(r.ID).SetObservationID(o.ID).SetPayload(nook.JSON[domain.Payload]{Data: payload}).Save(ctx)
 			if err != nil {
 				return err
 			}
 
-			if err := c.Delivery.Create().SetEventID(e.ID).SetDestinationID(r.OwnerID).Exec(ctx); err != nil {
+			if _, err := c.Delivery.Create().SetEventID(e.ID).SetDestinationID(r.OwnerID).Save(ctx); err != nil {
 				return err
 			}
 
@@ -70,7 +70,7 @@ func apply(ctx context.Context, c *ent.Client, t *ent.Target, p domain.Price, in
 			}
 		}
 
-		if err := update.Exec(ctx); err != nil {
+		if _, err := update.Exec(ctx); err != nil {
 			return err
 		}
 	}
@@ -79,12 +79,12 @@ func apply(ctx context.Context, c *ent.Client, t *ent.Target, p domain.Price, in
 		return nil
 	}
 
-	return c.Target.UpdateOneID(t.ID).SetLastObservedAt(p.ObservedAt).SetNextDueAt(p.ObservedAt.Add(interval)).SetFailureCount(0).SetLastError("").Exec(ctx)
+	return discard(c.Target.UpdateOneID(t.ID).SetLastObservedAt(p.ObservedAt).SetNextDueAt(p.ObservedAt.Add(interval)).SetFailureCount(0).SetLastError("").Exec(ctx))
 }
 
 func (s *Store) Observe(ctx context.Context, id string, p domain.Price, interval time.Duration) error {
-	return s.write(ctx, func(c *ent.Client) error {
-		t, err := c.Target.Query().Where(target.IDEQ(id)).ForUpdate().Only(ctx)
+	return s.write(ctx, func(c *models.Client) error {
+		t, err := c.Target.Query().Where(models.TargetColumns.ID.Eq(id)).Only(ctx)
 		if err != nil {
 			return err
 		}
@@ -97,10 +97,10 @@ func (s *Store) Observe(ctx context.Context, id string, p domain.Price, interval
 	})
 }
 
-func (s *Store) Due(ctx context.Context, limit int) ([]*ent.Target, error) {
-	base := s.Client.Target.Query().Where(target.NextDueAtLTE(time.Now()), target.HasRulesWith(rule.Enabled(true))).Order(ent.Asc(target.FieldNextDueAt))
-	first, err := base.Clone().First(ctx)
-	if ent.IsNotFound(err) {
+func (s *Store) Due(ctx context.Context, limit int) ([]*models.Target, error) {
+	base := s.Client.Target.Query().Where(models.TargetColumns.NextDueAt.LTE(time.Now()), models.TargetColumns.HasRulesWith(models.RuleColumns.Enabled.Eq(true))).OrderBy(models.TargetColumns.NextDueAt.Asc())
+	first, err := base.First(ctx)
+	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
 	}
 
@@ -108,9 +108,9 @@ func (s *Store) Due(ctx context.Context, limit int) ([]*ent.Target, error) {
 		return nil, err
 	}
 
-	return base.Where(target.CountryEQ(first.Country)).WithApp().Limit(limit).All(ctx)
+	return base.Where(models.TargetColumns.Country.Eq(first.Country)).WithApp().Limit(limit).All(ctx)
 }
 
 func (s *Store) TargetFailed(ctx context.Context, id string) error {
-	return s.Client.Target.UpdateOneID(id).SetNextDueAt(time.Now().Add(5 * time.Minute)).AddFailureCount(1).SetLastError("Steam request failed").Exec(ctx)
+	return discard(s.Client.Target.UpdateOneID(id).SetNextDueAt(time.Now().Add(5 * time.Minute)).AddFailureCount(1).SetLastError("Steam request failed").Exec(ctx))
 }

@@ -5,9 +5,9 @@ import (
 	"log/slog"
 	"sync"
 
-	"github.com/depthbomb/dealfox/ent"
 	"github.com/depthbomb/dealfox/internal/diagnostics"
 	"github.com/depthbomb/dealfox/internal/domain"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/tracker"
 )
 
@@ -34,7 +34,7 @@ func (w *Worker) Purge(ctx context.Context) error {
 	cfg := w.Tracker.Config
 	for range 100 {
 		count, err := w.Tracker.Store.Purge(ctx, cfg.ObservationRetention, cfg.DeliveryRetention, cfg.SubscriptionRetention)
-		w.Diagnostics.Add("retention", count)
+		w.Diagnostics.Add("retention", int(count))
 		if err != nil || count == 0 {
 			return err
 		}
@@ -56,7 +56,7 @@ func (w *Worker) Poll(ctx context.Context) error {
 	return w.fetch(ctx, targets)
 }
 
-func (w *Worker) fetch(ctx context.Context, targets []*ent.Target) error {
+func (w *Worker) fetch(ctx context.Context, targets []*models.Target) error {
 	ids := make([]int64, len(targets))
 	for i, t := range targets {
 		ids[i] = t.AppID
@@ -91,8 +91,12 @@ func (w *Worker) fetch(ctx context.Context, targets []*ent.Target) error {
 			continue
 		}
 
-		p.Name = t.Edges.App.Name
-		p.Type = t.Edges.App.Type
+		app, err := t.App.Get()
+		if err != nil {
+			return err
+		}
+		p.Name = app.Name
+		p.Type = app.Type
 		if err := w.Tracker.Store.Observe(ctx, t.ID, p, w.Tracker.Config.PollInterval); err != nil {
 			return err
 		}

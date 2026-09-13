@@ -5,18 +5,19 @@ import "context"
 // Diagnostics returns aggregate queue and pool statistics, never delivery rows.
 func (s *Store) Diagnostics(ctx context.Context) (map[string]float64, error) {
 	stats := s.db.Stats()
+	readers := s.db.ReadStats()
 	values := map[string]float64{
-		"db_open":         float64(stats.OpenConnections),
-		"db_in_use":       float64(stats.InUse),
-		"db_idle":         float64(stats.Idle),
-		"db_wait_count":   float64(stats.WaitCount),
-		"db_wait_seconds": stats.WaitDuration.Seconds(),
+		"db_open":         float64(stats.OpenConnections + readers.OpenConnections),
+		"db_in_use":       float64(stats.InUse + readers.InUse),
+		"db_idle":         float64(stats.Idle + readers.Idle),
+		"db_wait_count":   float64(stats.WaitCount + readers.WaitCount),
+		"db_wait_seconds": (stats.WaitDuration + readers.WaitDuration).Seconds(),
 	}
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT 'sale', status, COUNT(*), EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at)))::double precision
+	rows, err := s.db.ReadExecutor().QueryContext(ctx, `
+		SELECT 'sale', status, COUNT(*), (julianday('now') - julianday(MIN(created_at))) * 86400.0
 		FROM deliveries WHERE status IN ('pending', 'retry', 'sending', 'dead') GROUP BY status
 		UNION ALL
-		SELECT 'free', status, COUNT(*), EXTRACT(EPOCH FROM (CURRENT_TIMESTAMP - MIN(created_at)))::double precision
+		SELECT 'free', status, COUNT(*), (julianday('now') - julianday(MIN(created_at))) * 86400.0
 		FROM free_deliveries WHERE status IN ('pending', 'retry', 'sending', 'dead') GROUP BY status`)
 	if err != nil {
 		return values, err

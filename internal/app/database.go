@@ -1,48 +1,47 @@
 package app
 
 import (
-	"context"
 	"errors"
 	"fmt"
 
+	"github.com/depthbomb/argon"
 	"github.com/depthbomb/dealfox/internal/config"
 	"github.com/depthbomb/dealfox/internal/database"
 	"github.com/depthbomb/dealfox/internal/store"
-	"github.com/urfave/cli/v3"
 )
 
-func databaseCommand() *cli.Command {
-	return &cli.Command{
-		Name:  "database",
-		Usage: "Create the database, apply Atlas migrations, or verify migration history",
-		Commands: []*cli.Command{
+func databaseCommand() *argon.Command {
+	return &argon.Command{
+		Name:    "database",
+		Summary: "Create the database, apply SQLite migrations, or verify migration history",
+		Commands: []*argon.Command{
 			{
-				Name:  "create",
-				Usage: "Create the configured PostgreSQL database if absent",
-				Action: withConfig(func(ctx context.Context, _ *cli.Command, cfg *config.Config) error {
-					if cfg.DatabaseURL == nil {
-						return errors.New("DATABASE_URL is required")
+				Name:    "create",
+				Summary: "Create the configured SQLite database file if absent",
+				Run: withConfig(func(cx *argon.Context, cfg *config.Config) error {
+					if cfg.DatabasePath == "" {
+						return errors.New("DATABASE_PATH is required")
 					}
 
-					return database.Create(ctx, cfg.DatabaseURL.Release())
+					return database.Create(cx.Context, cfg.DatabasePath)
 				}),
 			},
 			{
-				Name:  "migrate",
-				Usage: "Apply embedded versioned migrations using the Atlas CLI",
-				Action: withConfig(func(ctx context.Context, cmd *cli.Command, cfg *config.Config) error {
-					if cfg.DatabaseURL == nil {
-						return errors.New("DATABASE_URL is required")
+				Name:    "migrate",
+				Summary: "Apply embedded versioned migrations using Nook",
+				Run: withConfig(func(cx *argon.Context, cfg *config.Config) error {
+					if cfg.DatabasePath == "" {
+						return errors.New("DATABASE_PATH is required")
 					}
 
-					return database.Migrate(ctx, cfg.DatabaseURL.Release(), cmd.Root().Writer)
+					return database.Migrate(cx.Context, cfg.DatabasePath, cx.IO.Out)
 				}),
 			},
 			{
-				Name:  "status",
-				Usage: "Verify applied migration versions and checksums",
-				Action: withStore(func(_ context.Context, cmd *cli.Command, _ *config.Config, _ *store.Store) error {
-					_, err := fmt.Fprintln(cmd.Root().Writer, "Database migrations are current and verified.")
+				Name:    "status",
+				Summary: "Verify applied migration versions and checksums",
+				Run: withStore(func(cx *argon.Context, _ *config.Config, _ *store.Store) error {
+					_, err := fmt.Fprintln(cx.IO.Out, "Database migrations are current and verified.")
 
 					return err
 				}),

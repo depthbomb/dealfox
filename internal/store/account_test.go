@@ -3,18 +3,16 @@ package store_test
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent"
-	"github.com/depthbomb/dealfox/ent/delivery"
-	"github.com/depthbomb/dealfox/ent/freedelivery"
-	"github.com/depthbomb/dealfox/ent/freesubscription"
-	"github.com/depthbomb/dealfox/ent/rule"
 	"github.com/depthbomb/dealfox/internal/domain"
 	"github.com/depthbomb/dealfox/internal/freegames"
 	"github.com/depthbomb/dealfox/internal/store"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
+	"github.com/depthbomb/nook"
 )
 
 func seedAccounts(t *testing.T, db *store.Store) {
@@ -62,7 +60,7 @@ func TestDeleteAccountIsolationAndHistory(t *testing.T) {
 	db, _ := testutil.Database(t)
 	seedAccounts(t, db)
 	ctx := t.Context()
-	if db.Client.Delivery.Query().Where(delivery.DestinationIDEQ("123")).CountX(ctx) != 2 || db.Client.FreeDelivery.Query().Where(freedelivery.DestinationIDEQ("123")).CountX(ctx) != 1 {
+	if testutil.Must(db.Client.Delivery.Query().Where(models.DeliveryColumns.DestinationID.Eq("123")).Count(ctx)) != 2 || testutil.Must(db.Client.FreeDelivery.Query().Where(models.FreeDeliveryColumns.DestinationID.Eq("123")).Count(ctx)) != 1 {
 		t.Fatal("fixture did not create personal notification history")
 	}
 
@@ -70,20 +68,20 @@ func TestDeleteAccountIsolationAndHistory(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if db.Client.Rule.Query().Where(rule.OwnerIDEQ("123")).CountX(ctx) != 0 || db.Client.Delivery.Query().Where(delivery.DestinationIDEQ("123")).CountX(ctx) != 0 || db.Client.FreeDelivery.Query().Where(freedelivery.DestinationIDEQ("123")).CountX(ctx) != 0 || db.Client.FreeSubscription.Query().Where(freesubscription.Or(freesubscription.ScopeEQ("dm:123"), freesubscription.ManagedByEQ("123"))).CountX(ctx) != 0 {
+	if testutil.Must(db.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq("123")).Count(ctx)) != 0 || testutil.Must(db.Client.Delivery.Query().Where(models.DeliveryColumns.DestinationID.Eq("123")).Count(ctx)) != 0 || testutil.Must(db.Client.FreeDelivery.Query().Where(models.FreeDeliveryColumns.DestinationID.Eq("123")).Count(ctx)) != 0 || testutil.Must(db.Client.FreeSubscription.Query().Where(nook.Or(models.FreeSubscriptionColumns.Scope.Eq("dm:123"), models.FreeSubscriptionColumns.ManagedBy.Eq("123"))).Count(ctx)) != 0 {
 		t.Fatal("personal data survived deletion")
 	}
 
-	if db.Client.Rule.Query().Where(rule.OwnerIDEQ("999")).CountX(ctx) != 2 || db.Client.Event.Query().CountX(ctx) != 2 || db.Client.Delivery.Query().CountX(ctx) != 2 || db.Client.FreeSubscription.Query().CountX(ctx) != 3 || db.Client.FreeDelivery.Query().CountX(ctx) != 2 {
+	if testutil.Must(db.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq("999")).Count(ctx)) != 2 || testutil.Must(db.Client.Event.Query().Count(ctx)) != 2 || testutil.Must(db.Client.Delivery.Query().Count(ctx)) != 2 || testutil.Must(db.Client.FreeSubscription.Query().Count(ctx)) != 3 || testutil.Must(db.Client.FreeDelivery.Query().Count(ctx)) != 2 {
 		t.Fatal("deletion changed other users or server alerts")
 	}
 
-	server := db.Client.FreeSubscription.Query().Where(freesubscription.ScopeEQ("guild:456")).OnlyX(ctx)
+	server := testutil.Must(db.Client.FreeSubscription.Query().Where(models.FreeSubscriptionColumns.Scope.Eq("guild:456")).Only(ctx))
 	if !server.Enabled || server.ManagedBy == "123" || server.DestinationID != "789" {
 		t.Fatal("server alert was not preserved with its manager removed")
 	}
 
-	if db.Client.App.Query().CountX(ctx) != 2 || db.Client.Target.Query().CountX(ctx) != 2 || db.Client.FreeOffer.Query().CountX(ctx) != 1 {
+	if testutil.Must(db.Client.App.Query().Count(ctx)) != 2 || testutil.Must(db.Client.Target.Query().Count(ctx)) != 2 || testutil.Must(db.Client.FreeOffer.Query().Count(ctx)) != 1 {
 		t.Fatal("shared game data was deleted")
 	}
 
@@ -95,22 +93,15 @@ func TestDeleteAccountIsolationAndHistory(t *testing.T) {
 func TestDeleteAccountRollsBackAllPersonalChanges(t *testing.T) {
 	db, _ := testutil.Database(t)
 	seedAccounts(t, db)
-	failure := errors.New("test deletion failure")
-	db.Client.FreeSubscription.Use(func(next ent.Mutator) ent.Mutator {
-		return ent.MutateFunc(func(ctx context.Context, mutation ent.Mutation) (ent.Value, error) {
-			if mutation.Op().Is(ent.OpDelete) {
-				return nil, failure
-			}
-
-			return next.Mutate(ctx, mutation)
-		})
-	})
-	if err := db.DeleteAccount(t.Context(), "123"); !errors.Is(err, failure) {
+	if _, err := db.Client.SQL().ExecContext(t.Context(), "CREATE TRIGGER fail_account_delete BEFORE DELETE ON free_subscriptions BEGIN SELECT RAISE(ABORT, 'test deletion failure'); END"); err != nil {
+		t.Fatal(err)
+	}
+	if err := db.DeleteAccount(t.Context(), "123"); err == nil || !strings.Contains(err.Error(), "test deletion failure") {
 		t.Fatalf("expected injected transaction failure: %v", err)
 	}
 
 	ctx := t.Context()
-	if db.Client.Rule.Query().CountX(ctx) != 4 || db.Client.Event.Query().CountX(ctx) != 4 || db.Client.Delivery.Query().CountX(ctx) != 4 || db.Client.FreeSubscription.Query().CountX(ctx) != 5 || db.Client.FreeDelivery.Query().CountX(ctx) != 3 {
+	if testutil.Must(db.Client.Rule.Query().Count(ctx)) != 4 || testutil.Must(db.Client.Event.Query().Count(ctx)) != 4 || testutil.Must(db.Client.Delivery.Query().Count(ctx)) != 4 || testutil.Must(db.Client.FreeSubscription.Query().Count(ctx)) != 5 || testutil.Must(db.Client.FreeDelivery.Query().Count(ctx)) != 3 {
 		t.Fatal("failed account deletion committed partial changes")
 	}
 }
@@ -130,7 +121,7 @@ func TestDeleteAccountWaitsForDeliveryAndHonorsCancellation(t *testing.T) {
 		t.Fatalf("deletion passed an active delivery: %v", err)
 	}
 
-	if db.Client.Rule.Query().Where(rule.OwnerIDEQ("123")).CountX(t.Context()) != 2 {
+	if testutil.Must(db.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq("123")).Count(t.Context())) != 2 {
 		t.Fatal("cancelled deletion removed data")
 	}
 

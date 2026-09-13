@@ -8,10 +8,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent"
-	"github.com/depthbomb/dealfox/ent/delivery"
 	"github.com/depthbomb/dealfox/internal/domain"
 	"github.com/depthbomb/dealfox/internal/store"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
 	"github.com/depthbomb/dealfox/internal/tracker"
 	"github.com/depthbomb/tomogo/rest"
@@ -88,7 +87,7 @@ func TestPollingAndDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if len(steam.batches) != 3 || len(steam.batches[0]) != 2 || db.Client.Delivery.Query().CountX(ctx) != 3 {
+	if len(steam.batches) != 3 || len(steam.batches[0]) != 2 || testutil.Must(db.Client.Delivery.Query().Count(ctx)) != 3 {
 		t.Fatalf("poll did not group subscribers and split failed batch: %v", steam.batches)
 	}
 
@@ -102,7 +101,7 @@ func TestPollingAndDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	dead := db.Client.Delivery.Query().Where(delivery.StatusEQ(delivery.StatusDead)).OnlyX(ctx)
+	dead := testutil.Must(db.Client.Delivery.Query().Where(models.DeliveryColumns.Status.Eq(models.DeliveryStatusDead)).Only(ctx))
 	if dead.AttemptCount != 1 {
 		t.Fatal("permanent error did not dead-letter immediately")
 	}
@@ -112,7 +111,7 @@ func TestPollingAndDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	retry := db.Client.Delivery.Query().Where(delivery.StatusEQ(delivery.StatusRetry)).OnlyX(ctx)
+	retry := testutil.Must(db.Client.Delivery.Query().Where(models.DeliveryColumns.Status.Eq(models.DeliveryStatusRetry)).Only(ctx))
 	if !retry.NextAttemptAt.After(time.Now()) {
 		t.Fatal("transient error was not delayed")
 	}
@@ -122,7 +121,7 @@ func TestPollingAndDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if db.Client.Delivery.Query().Where(delivery.StatusEQ(delivery.StatusSent)).CountX(ctx) != 1 {
+	if testutil.Must(db.Client.Delivery.Query().Where(models.DeliveryColumns.Status.Eq(models.DeliveryStatusSent)).Count(ctx)) != 1 {
 		t.Fatal("successful send was not recorded")
 	}
 
@@ -134,7 +133,7 @@ func TestPollingAndDelivery(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if db.Client.Delivery.GetX(ctx, dead.ID).Status != delivery.StatusSent {
+	if testutil.Must(db.Client.Delivery.Get(ctx, dead.ID)).Status != models.DeliveryStatusSent {
 		t.Fatal("operator retry did not send")
 	}
 
@@ -148,7 +147,7 @@ func TestPollingAndDelivery(t *testing.T) {
 func TestRetryPolicy(t *testing.T) {
 	cfg := testutil.Config(t)
 	now := time.Now()
-	d := &ent.Delivery{
+	d := &models.Delivery{
 		ID:           "abcdefghijklmnopqrstuvwx",
 		CreatedAt:    now,
 		AttemptCount: 1,

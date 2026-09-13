@@ -1,20 +1,15 @@
 package testutil
 
 import (
-	"context"
 	"io"
-	"net/url"
-	"os"
-	"strings"
+	"path/filepath"
 	"testing"
 	"time"
 
-	"github.com/depthbomb/cuid2"
 	"github.com/depthbomb/dealfox/internal/config"
 	"github.com/depthbomb/dealfox/internal/database"
 	"github.com/depthbomb/dealfox/internal/domain"
 	"github.com/depthbomb/dealfox/internal/store"
-	"github.com/jackc/pgx/v5"
 )
 
 func Config(t *testing.T) *config.Config {
@@ -29,60 +24,36 @@ func Config(t *testing.T) *config.Config {
 	return &cfg
 }
 
-// Database creates and removes only a uniquely named database owned by the test.
+// Database creates a migrated SQLite file owned and removed by the test.
 func Database(t *testing.T) (*store.Store, string) {
 	t.Helper()
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL is unset; PostgreSQL integration test skipped")
-	}
-
-	u, err := url.Parse(dsn)
-	if err != nil || !strings.HasPrefix(u.Path, "/dealfox_test_") {
-		t.Fatal("TEST_DATABASE_URL must name a disposable dealfox_test_* database")
-	}
-
-	name := "dealfox_test_" + cuid.Generate()
-	u.Path = "/" + name
-	dsn = u.String()
-	ctx := t.Context()
-	if err := database.Create(ctx, dsn); err != nil {
+	path := filepath.Join(t.TempDir(), "dealfox.db")
+	if err := database.Migrate(t.Context(), path, io.Discard); err != nil {
 		t.Fatal(err)
 	}
-
-	adminURL := *u
-	adminURL.Path = "/postgres"
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
-		defer cancel()
-		conn, err := pgx.Connect(cleanupCtx, adminURL.String())
-		if err != nil {
-			t.Error("could not connect for test database cleanup")
-
-			return
-		}
-		defer conn.Close(cleanupCtx)
-		if _, err := conn.Exec(cleanupCtx, "DROP DATABASE "+pgx.Identifier{name}.Sanitize()); err != nil {
-			t.Error(err)
-		}
-	})
-
-	if err := database.Migrate(ctx, dsn, io.Discard); err != nil {
-		t.Fatal(err)
-	}
-
-	db, err := store.Open(ctx, dsn)
+	db, err := store.Open(t.Context(), path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = db.Close()
+		if err := db.Close(); err != nil {
+			t.Error(err)
+		}
 	})
-	if err := db.ValidateMigrations(ctx); err != nil {
+	if err := db.ValidateMigrations(t.Context()); err != nil {
 		t.Fatal(err)
 	}
 
-	return db, dsn
+	return db, path
+}
+
+// Must preserves the panic-on-error behavior of the previous generated test helpers.
+func Must[T any](value T, err error) T {
+	if err != nil {
+		panic(err)
+	}
+
+	return value
 }
 
 func Price(id int64, final int64, at time.Time) domain.Price {

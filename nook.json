@@ -1,0 +1,6 @@
+{
+  "schema": "internal/store/schema",
+  "output": "internal/store/models",
+  "package": "models",
+  "migrations": "migrations"
+}

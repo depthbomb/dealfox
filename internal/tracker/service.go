@@ -2,13 +2,15 @@ package tracker
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 
-	"github.com/depthbomb/dealfox/ent"
 	"github.com/depthbomb/dealfox/internal/config"
 	"github.com/depthbomb/dealfox/internal/domain"
 	"github.com/depthbomb/dealfox/internal/steam"
 	"github.com/depthbomb/dealfox/internal/store"
+	"github.com/depthbomb/dealfox/internal/store/models"
 )
 
 type Steam interface {
@@ -50,7 +52,7 @@ func (s *Service) Price(ctx context.Context, input, country string) (domain.Pric
 		exact, err := s.Store.ExactApp(ctx, name)
 		if err == nil {
 			id = exact.ID
-		} else if !ent.IsNotFound(err) {
+		} else if !errors.Is(err, sql.ErrNoRows) {
 			return domain.Price{}, err
 		} else {
 			apps, err := s.Store.Search(ctx, name)
@@ -89,7 +91,7 @@ func (s *Service) Price(ctx context.Context, input, country string) (domain.Pric
 	return p, nil
 }
 
-func (s *Service) Add(ctx context.Context, req AddRequest) (*ent.Rule, domain.Price, error) {
+func (s *Service) Add(ctx context.Context, req AddRequest) (*models.Rule, domain.Price, error) {
 	release, err := s.users.acquire(ctx, req.OwnerID)
 	if err != nil {
 		return nil, domain.Price{}, err

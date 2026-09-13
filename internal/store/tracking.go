@@ -2,14 +2,14 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent"
-	"github.com/depthbomb/dealfox/ent/app"
-	"github.com/depthbomb/dealfox/ent/rule"
-	"github.com/depthbomb/dealfox/ent/target"
 	"github.com/depthbomb/dealfox/internal/domain"
+	"github.com/depthbomb/dealfox/internal/store/models"
 )
 
 type AddRequest struct {
@@ -25,31 +25,33 @@ type AddRequest struct {
 
 // TrackedGameCount counts distinct Steam apps with at least one enabled rule.
 func (s *Store) TrackedGameCount(ctx context.Context) (int, error) {
-	return s.Client.App.Query().Where(app.HasTargetsWith(target.HasRulesWith(rule.Enabled(true)))).Count(ctx)
+	count, err := s.Client.App.Query().Where(models.AppColumns.HasTargetsWith(models.TargetColumns.HasRulesWith(models.RuleColumns.Enabled.Eq(true)))).Count(ctx)
+
+	return int(count), err
 }
 
-func (s *Store) Add(ctx context.Context, req AddRequest) (*ent.Rule, error) {
-	var result *ent.Rule
-	err := s.write(ctx, func(c *ent.Client) error {
+func (s *Store) Add(ctx context.Context, req AddRequest) (*models.Rule, error) {
+	var result *models.Rule
+	err := s.write(ctx, func(c *models.Client) error {
 		if req.RequestID != "" {
-			previous, err := c.Rule.Query().Where(rule.RequestIDEQ(req.RequestID), rule.OwnerIDEQ(req.OwnerID)).Only(ctx)
+			previous, err := c.Rule.Query().Where(models.RuleColumns.RequestID.Eq(req.RequestID), models.RuleColumns.OwnerID.Eq(req.OwnerID)).Only(ctx)
 			if err == nil {
 				result = previous
 
 				return nil
 			}
 
-			if !ent.IsNotFound(err) {
+			if !errors.Is(err, sql.ErrNoRows) {
 				return err
 			}
 		}
 
-		count, err := c.Rule.Query().Where(rule.OwnerIDEQ(req.OwnerID), rule.Enabled(true)).Count(ctx)
+		count, err := c.Rule.Query().Where(models.RuleColumns.OwnerID.Eq(req.OwnerID), models.RuleColumns.Enabled.Eq(true)).Count(ctx)
 		if err != nil {
 			return err
 		}
 
-		if count >= req.Maximum {
+		if count >= int64(req.Maximum) {
 			return &domain.PublicError{
 				Code:    "QUOTA_EXCEEDED",
 				Message: fmt.Sprintf("You can have at most %d active tracking rules.", req.Maximum),
@@ -57,20 +59,20 @@ func (s *Store) Add(ctx context.Context, req AddRequest) (*ent.Rule, error) {
 		}
 
 		p := req.Price
-		if err := c.App.Create().SetID(p.AppID).SetName(p.Name).SetType(p.Type).OnConflictColumns(app.FieldID).UpdateName().UpdateType().UpdateUpdatedAt().Exec(ctx); err != nil {
+		if _, err := c.App.Create().SetID(p.AppID).SetName(p.Name).SetNameFold(strings.ToLower(p.Name)).SetType(p.Type).SetUpdatedAt(time.Now()).OnConflict(models.AppColumns.ID).UpdateExcluded(models.AppColumns.Name, models.AppColumns.NameFold, models.AppColumns.Type, models.AppColumns.UpdatedAt).Save(ctx); err != nil {
 			return err
 		}
 
-		if err := c.Target.Create().SetAppID(p.AppID).SetCountry(p.Country).OnConflictColumns(target.FieldAppID, target.FieldCountry).Ignore().Exec(ctx); err != nil {
+		if _, err := c.Target.Create().SetAppID(p.AppID).SetCountry(p.Country).OnConflict(models.TargetColumns.AppID, models.TargetColumns.Country).DoNothing().Save(ctx); err != nil {
 			return err
 		}
 
-		t, err := c.Target.Query().Where(target.AppIDEQ(p.AppID), target.CountryEQ(p.Country)).ForUpdate().Only(ctx)
+		t, err := c.Target.Query().Where(models.TargetColumns.AppID.Eq(p.AppID), models.TargetColumns.Country.Eq(p.Country)).Only(ctx)
 		if err != nil {
 			return err
 		}
 
-		exists, err := c.Rule.Query().Where(rule.OwnerIDEQ(req.OwnerID), rule.TargetIDEQ(t.ID), rule.ConditionEQ(rule.Condition(req.Condition)), rule.Enabled(true)).Exist(ctx)
+		exists, err := c.Rule.Query().Where(models.RuleColumns.OwnerID.Eq(req.OwnerID), models.RuleColumns.TargetID.Eq(t.ID), models.RuleColumns.Condition.Eq(models.RuleCondition(req.Condition)), models.RuleColumns.Enabled.Eq(true)).Exists(ctx)
 		if err != nil {
 			return err
 		}
@@ -82,7 +84,7 @@ func (s *Store) Add(ctx context.Context, req AddRequest) (*ent.Rule, error) {
 			}
 		}
 
-		create := c.Rule.Create().SetTargetID(t.ID).SetOwnerID(req.OwnerID).SetCondition(rule.Condition(req.Condition)).SetRecurring(req.Recurring)
+		create := c.Rule.Create().SetTargetID(t.ID).SetOwnerID(req.OwnerID).SetCondition(models.RuleCondition(req.Condition)).SetRecurring(req.Recurring)
 		if req.RequestID != "" {
 			create.SetRequestID(req.RequestID)
 		}
@@ -114,15 +116,15 @@ func (s *Store) Add(ctx context.Context, req AddRequest) (*ent.Rule, error) {
 	return result, err
 }
 
-func (s *Store) List(ctx context.Context, owner string) ([]*ent.Rule, error) {
-	return s.Client.Rule.Query().Where(rule.OwnerIDEQ(owner), rule.Enabled(true)).WithTarget(func(q *ent.TargetQuery) {
-		q.WithApp()
-	}).Order(ent.Asc(rule.FieldCreatedAt)).All(ctx)
+func (s *Store) List(ctx context.Context, owner string) ([]*models.Rule, error) {
+	return s.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq(owner), models.RuleColumns.Enabled.Eq(true)).WithTarget(func(q models.TargetQuery) models.TargetQuery {
+		return q.WithApp()
+	}).OrderBy(models.RuleColumns.CreatedAt.Asc()).All(ctx)
 }
 
 func (s *Store) Remove(ctx context.Context, owner, id string) error {
-	return s.write(ctx, func(c *ent.Client) error {
-		n, err := c.Rule.Update().Where(rule.IDEQ(id), rule.OwnerIDEQ(owner), rule.Enabled(true)).SetEnabled(false).Save(ctx)
+	return s.write(ctx, func(c *models.Client) error {
+		n, err := c.Rule.Update().Where(models.RuleColumns.ID.Eq(id), models.RuleColumns.OwnerID.Eq(owner), models.RuleColumns.Enabled.Eq(true)).SetEnabled(false).Exec(ctx)
 		if err == nil && n == 0 {
 			return &domain.PublicError{
 				Code:    "NOT_FOUND",

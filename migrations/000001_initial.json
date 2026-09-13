@@ -1,0 +1,1006 @@
+{
+  "format": 1,
+  "version": 1,
+  "name": "initial",
+  "parent": "",
+  "checksum": "d551281429127a30a993c794df3c8eaec4ab6a932324975fc210a8849a761295",
+  "before": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+  "after": "46b464d506123742e27c29b78cdfbdebe77e5145ce99a08564c110aa51a52fab",
+  "schema": {
+    "tables": [
+      {
+        "name": "apps",
+        "model": "App",
+        "key": "apps",
+        "fields": [
+          {
+            "checks": [
+              {
+                "name": "app_id_positive",
+                "expression": "id \u003e 0"
+              }
+            ],
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "integer",
+            "primary": true
+          },
+          {
+            "name": "name",
+            "go_name": "Name",
+            "key": "name",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "type",
+            "go_name": "Type",
+            "key": "type",
+            "kind": "text"
+          },
+          {
+            "name": "last_modified",
+            "go_name": "LastModified",
+            "key": "last_modified",
+            "kind": "integer",
+            "default": "0"
+          },
+          {
+            "name": "price_change_number",
+            "go_name": "PriceChangeNumber",
+            "key": "price_change_number",
+            "kind": "integer",
+            "default": "0"
+          },
+          {
+            "name": "updated_at",
+            "go_name": "UpdatedAt",
+            "key": "updated_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "name_fold",
+            "go_name": "NameFold",
+            "key": "name_fold",
+            "kind": "text",
+            "default": "''"
+          }
+        ],
+        "relations": [
+          {
+            "name": "Targets",
+            "table": "targets",
+            "foreign_key": "app_id",
+            "many": true,
+            "kind": "has_many"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "apps_name_fold",
+            "fields": [
+              "name_fold"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "deliveries",
+        "model": "Delivery",
+        "key": "deliveries",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true,
+            "non_empty": true,
+            "max_length": 24
+          },
+          {
+            "name": "event_id",
+            "go_name": "EventID",
+            "key": "event_id",
+            "kind": "text",
+            "unique": true,
+            "ref_table": "events",
+            "ref_column": "id"
+          },
+          {
+            "name": "destination_id",
+            "go_name": "DestinationID",
+            "key": "destination_id",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "status",
+            "go_name": "Status",
+            "key": "status",
+            "kind": "enum",
+            "default": "'pending'",
+            "enum_values": [
+              "pending",
+              "sending",
+              "retry",
+              "sent",
+              "dead",
+              "cancelled"
+            ]
+          },
+          {
+            "checks": [
+              {
+                "name": "delivery_attempt_count_nonnegative",
+                "expression": "attempt_count \u003e= 0"
+              }
+            ],
+            "name": "attempt_count",
+            "go_name": "AttemptCount",
+            "key": "attempt_count",
+            "kind": "integer",
+            "default": "0"
+          },
+          {
+            "name": "next_attempt_at",
+            "go_name": "NextAttemptAt",
+            "key": "next_attempt_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "message_id",
+            "go_name": "MessageID",
+            "key": "message_id",
+            "kind": "text",
+            "default": "''"
+          },
+          {
+            "name": "last_error",
+            "go_name": "LastError",
+            "key": "last_error",
+            "kind": "text",
+            "default": "''"
+          },
+          {
+            "name": "created_at",
+            "go_name": "CreatedAt",
+            "key": "created_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "updated_at",
+            "go_name": "UpdatedAt",
+            "key": "updated_at",
+            "kind": "timestamp"
+          }
+        ],
+        "relations": [
+          {
+            "name": "Event",
+            "table": "events",
+            "foreign_key": "event_id",
+            "many": false,
+            "kind": "belongs_to"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "deliveries_status_next_attempt_at",
+            "fields": [
+              "status",
+              "next_attempt_at"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "events",
+        "model": "Event",
+        "key": "events",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true,
+            "non_empty": true,
+            "max_length": 24
+          },
+          {
+            "name": "rule_id",
+            "go_name": "RuleID",
+            "key": "rule_id",
+            "kind": "text",
+            "ref_table": "rules",
+            "ref_column": "id"
+          },
+          {
+            "name": "observation_id",
+            "go_name": "ObservationID",
+            "key": "observation_id",
+            "kind": "text",
+            "ref_table": "observations",
+            "ref_column": "id"
+          },
+          {
+            "name": "payload",
+            "go_name": "Payload",
+            "key": "payload",
+            "kind": "text",
+            "type_name": "Payload",
+            "type_import": "github.com/depthbomb/dealfox/internal/store/schema"
+          },
+          {
+            "name": "created_at",
+            "go_name": "CreatedAt",
+            "key": "created_at",
+            "kind": "timestamp"
+          }
+        ],
+        "relations": [
+          {
+            "name": "Deliveries",
+            "table": "deliveries",
+            "foreign_key": "event_id",
+            "many": true,
+            "kind": "has_many"
+          },
+          {
+            "name": "Observation",
+            "table": "observations",
+            "foreign_key": "observation_id",
+            "many": false,
+            "kind": "belongs_to"
+          },
+          {
+            "name": "Rule",
+            "table": "rules",
+            "foreign_key": "rule_id",
+            "many": false,
+            "kind": "belongs_to"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "events_rule_id_observation_id",
+            "fields": [
+              "rule_id",
+              "observation_id"
+            ],
+            "unique": true
+          }
+        ]
+      },
+      {
+        "name": "free_deliveries",
+        "model": "FreeDelivery",
+        "key": "free_deliveries",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true,
+            "non_empty": true,
+            "max_length": 24
+          },
+          {
+            "name": "offer_id",
+            "go_name": "OfferID",
+            "key": "offer_id",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "subscription_id",
+            "go_name": "SubscriptionID",
+            "key": "subscription_id",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "checks": [
+              {
+                "name": "freedelivery_offer_generation_positive",
+                "expression": "offer_generation \u003e 0"
+              }
+            ],
+            "name": "offer_generation",
+            "go_name": "OfferGeneration",
+            "key": "offer_generation",
+            "kind": "integer",
+            "default": "1"
+          },
+          {
+            "name": "destination_kind",
+            "go_name": "DestinationKind",
+            "key": "destination_kind",
+            "kind": "enum",
+            "enum_values": [
+              "dm",
+              "channel"
+            ]
+          },
+          {
+            "name": "destination_id",
+            "go_name": "DestinationID",
+            "key": "destination_id",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "payload",
+            "go_name": "Payload",
+            "key": "payload",
+            "kind": "text",
+            "type_name": "Offer",
+            "type_import": "github.com/depthbomb/dealfox/internal/store/schema"
+          },
+          {
+            "name": "status",
+            "go_name": "Status",
+            "key": "status",
+            "kind": "enum",
+            "default": "'pending'",
+            "enum_values": [
+              "pending",
+              "sending",
+              "retry",
+              "sent",
+              "dead",
+              "cancelled"
+            ]
+          },
+          {
+            "checks": [
+              {
+                "name": "freedelivery_attempt_count_nonnegative",
+                "expression": "attempt_count \u003e= 0"
+              }
+            ],
+            "name": "attempt_count",
+            "go_name": "AttemptCount",
+            "key": "attempt_count",
+            "kind": "integer",
+            "default": "0"
+          },
+          {
+            "name": "next_attempt_at",
+            "go_name": "NextAttemptAt",
+            "key": "next_attempt_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "message_id",
+            "go_name": "MessageID",
+            "key": "message_id",
+            "kind": "text",
+            "default": "''"
+          },
+          {
+            "name": "last_error",
+            "go_name": "LastError",
+            "key": "last_error",
+            "kind": "text",
+            "default": "''"
+          },
+          {
+            "name": "created_at",
+            "go_name": "CreatedAt",
+            "key": "created_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "updated_at",
+            "go_name": "UpdatedAt",
+            "key": "updated_at",
+            "kind": "timestamp"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "free_deliveries_offer_id_offer_generation_subscription_id",
+            "fields": [
+              "offer_id",
+              "offer_generation",
+              "subscription_id"
+            ],
+            "unique": true
+          },
+          {
+            "name": "free_deliveries_status_next_attempt_at",
+            "fields": [
+              "status",
+              "next_attempt_at"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "free_monitors",
+        "model": "FreeMonitor",
+        "key": "free_monitors",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true
+          },
+          {
+            "name": "checked_at",
+            "go_name": "CheckedAt",
+            "key": "checked_at",
+            "kind": "timestamp",
+            "nullable": true
+          },
+          {
+            "name": "next_check_at",
+            "go_name": "NextCheckAt",
+            "key": "next_check_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "status",
+            "go_name": "Status",
+            "key": "status",
+            "kind": "text",
+            "default": "'not checked'"
+          },
+          {
+            "name": "problems",
+            "go_name": "Problems",
+            "key": "problems",
+            "kind": "text",
+            "default": "'[]'",
+            "type_name": "Problems",
+            "type_import": "github.com/depthbomb/dealfox/internal/store/schema"
+          },
+          {
+            "name": "failures",
+            "go_name": "Failures",
+            "key": "failures",
+            "kind": "integer",
+            "default": "0"
+          }
+        ]
+      },
+      {
+        "name": "free_offers",
+        "model": "FreeOffer",
+        "key": "free_offers",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true,
+            "non_empty": true,
+            "max_length": 24
+          },
+          {
+            "name": "identity",
+            "go_name": "Identity",
+            "key": "identity",
+            "kind": "text",
+            "unique": true
+          },
+          {
+            "name": "source",
+            "go_name": "Source",
+            "key": "source",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "payload",
+            "go_name": "Payload",
+            "key": "payload",
+            "kind": "text",
+            "type_name": "Offer",
+            "type_import": "github.com/depthbomb/dealfox/internal/store/schema"
+          },
+          {
+            "name": "eligible",
+            "go_name": "Eligible",
+            "key": "eligible",
+            "kind": "boolean",
+            "default": "0"
+          },
+          {
+            "name": "closed",
+            "go_name": "Closed",
+            "key": "closed",
+            "kind": "boolean",
+            "default": "0"
+          },
+          {
+            "checks": [
+              {
+                "name": "freeoffer_generation_positive",
+                "expression": "generation \u003e 0"
+              }
+            ],
+            "name": "generation",
+            "go_name": "Generation",
+            "key": "generation",
+            "kind": "integer",
+            "default": "1"
+          },
+          {
+            "name": "first_seen_at",
+            "go_name": "FirstSeenAt",
+            "key": "first_seen_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "last_seen_at",
+            "go_name": "LastSeenAt",
+            "key": "last_seen_at",
+            "kind": "timestamp"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "free_offers_source_eligible",
+            "fields": [
+              "source",
+              "eligible"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "free_subscriptions",
+        "model": "FreeSubscription",
+        "key": "free_subscriptions",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true,
+            "non_empty": true,
+            "max_length": 24
+          },
+          {
+            "name": "scope",
+            "go_name": "Scope",
+            "key": "scope",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "source",
+            "go_name": "Source",
+            "key": "source",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "destination_kind",
+            "go_name": "DestinationKind",
+            "key": "destination_kind",
+            "kind": "enum",
+            "enum_values": [
+              "dm",
+              "channel"
+            ]
+          },
+          {
+            "name": "destination_id",
+            "go_name": "DestinationID",
+            "key": "destination_id",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "managed_by",
+            "go_name": "ManagedBy",
+            "key": "managed_by",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "enabled",
+            "go_name": "Enabled",
+            "key": "enabled",
+            "kind": "boolean",
+            "default": "1"
+          },
+          {
+            "name": "created_at",
+            "go_name": "CreatedAt",
+            "key": "created_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "updated_at",
+            "go_name": "UpdatedAt",
+            "key": "updated_at",
+            "kind": "timestamp"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "free_subscriptions_scope_source",
+            "fields": [
+              "scope",
+              "source"
+            ],
+            "unique": true
+          },
+          {
+            "name": "free_subscriptions_source_enabled",
+            "fields": [
+              "source",
+              "enabled"
+            ]
+          }
+        ]
+      },
+      {
+        "name": "observations",
+        "model": "Observation",
+        "key": "observations",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true,
+            "non_empty": true,
+            "max_length": 24
+          },
+          {
+            "name": "target_id",
+            "go_name": "TargetID",
+            "key": "target_id",
+            "kind": "text",
+            "ref_table": "targets",
+            "ref_column": "id"
+          },
+          {
+            "name": "observed_at",
+            "go_name": "ObservedAt",
+            "key": "observed_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "price",
+            "go_name": "Price",
+            "key": "price",
+            "kind": "text",
+            "type_name": "Price",
+            "type_import": "github.com/depthbomb/dealfox/internal/store/schema"
+          }
+        ],
+        "relations": [
+          {
+            "name": "Events",
+            "table": "events",
+            "foreign_key": "observation_id",
+            "many": true,
+            "kind": "has_many"
+          },
+          {
+            "name": "Target",
+            "table": "targets",
+            "foreign_key": "target_id",
+            "many": false,
+            "kind": "belongs_to"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "observations_observed_at",
+            "fields": [
+              "observed_at"
+            ]
+          },
+          {
+            "name": "observations_target_id_observed_at",
+            "fields": [
+              "target_id",
+              "observed_at"
+            ]
+          }
+        ]
+      },
+      {
+        "checks": [
+          {
+            "name": "rule_budget",
+            "expression": "(condition = 'any_sale' AND budget_minor IS NULL AND budget_currency = '') OR (condition = 'sale_under_budget' AND budget_minor IS NOT NULL AND budget_minor \u003e= 0 AND length(budget_currency) = 3 AND budget_currency GLOB '[A-Z][A-Z][A-Z]')"
+          }
+        ],
+        "name": "rules",
+        "model": "Rule",
+        "key": "rules",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true,
+            "non_empty": true,
+            "max_length": 24
+          },
+          {
+            "name": "target_id",
+            "go_name": "TargetID",
+            "key": "target_id",
+            "kind": "text",
+            "ref_table": "targets",
+            "ref_column": "id"
+          },
+          {
+            "name": "owner_id",
+            "go_name": "OwnerID",
+            "key": "owner_id",
+            "kind": "text",
+            "non_empty": true
+          },
+          {
+            "name": "request_id",
+            "go_name": "RequestID",
+            "key": "request_id",
+            "kind": "text",
+            "nullable": true,
+            "unique": true
+          },
+          {
+            "name": "condition",
+            "go_name": "Condition",
+            "key": "condition",
+            "kind": "enum",
+            "enum_values": [
+              "any_sale",
+              "sale_under_budget"
+            ]
+          },
+          {
+            "checks": [
+              {
+                "name": "rule_budget_minor_nonnegative",
+                "expression": "budget_minor \u003e= 0"
+              }
+            ],
+            "name": "budget_minor",
+            "go_name": "BudgetMinor",
+            "key": "budget_minor",
+            "kind": "integer",
+            "nullable": true
+          },
+          {
+            "name": "budget_currency",
+            "go_name": "BudgetCurrency",
+            "key": "budget_currency",
+            "kind": "text",
+            "default": "''"
+          },
+          {
+            "name": "recurring",
+            "go_name": "Recurring",
+            "key": "recurring",
+            "kind": "boolean",
+            "default": "0"
+          },
+          {
+            "name": "enabled",
+            "go_name": "Enabled",
+            "key": "enabled",
+            "kind": "boolean",
+            "default": "1"
+          },
+          {
+            "name": "latched",
+            "go_name": "Latched",
+            "key": "latched",
+            "kind": "boolean",
+            "default": "0"
+          },
+          {
+            "name": "created_at",
+            "go_name": "CreatedAt",
+            "key": "created_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "updated_at",
+            "go_name": "UpdatedAt",
+            "key": "updated_at",
+            "kind": "timestamp"
+          }
+        ],
+        "relations": [
+          {
+            "name": "Events",
+            "table": "events",
+            "foreign_key": "rule_id",
+            "many": true,
+            "kind": "has_many"
+          },
+          {
+            "name": "Target",
+            "table": "targets",
+            "foreign_key": "target_id",
+            "many": false,
+            "kind": "belongs_to"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "rules_owner_id_enabled",
+            "fields": [
+              "owner_id",
+              "enabled"
+            ]
+          },
+          {
+            "name": "rules_owner_id_target_id_condition",
+            "fields": [
+              "owner_id",
+              "target_id",
+              "condition"
+            ],
+            "unique": true,
+            "where": "enabled = 1"
+          },
+          {
+            "name": "rules_target_id_enabled",
+            "fields": [
+              "target_id",
+              "enabled"
+            ]
+          }
+        ]
+      },
+      {
+        "checks": [
+          {
+            "name": "target_country",
+            "expression": "length(country) = 2 AND country GLOB '[A-Z][A-Z]'"
+          }
+        ],
+        "name": "targets",
+        "model": "Target",
+        "key": "targets",
+        "fields": [
+          {
+            "name": "id",
+            "go_name": "ID",
+            "key": "id",
+            "kind": "text",
+            "primary": true,
+            "non_empty": true,
+            "max_length": 24
+          },
+          {
+            "name": "app_id",
+            "go_name": "AppID",
+            "key": "app_id",
+            "kind": "integer",
+            "ref_table": "apps",
+            "ref_column": "id"
+          },
+          {
+            "name": "country",
+            "go_name": "Country",
+            "key": "country",
+            "kind": "text",
+            "max_length": 2
+          },
+          {
+            "name": "next_due_at",
+            "go_name": "NextDueAt",
+            "key": "next_due_at",
+            "kind": "timestamp"
+          },
+          {
+            "name": "last_observed_at",
+            "go_name": "LastObservedAt",
+            "key": "last_observed_at",
+            "kind": "timestamp",
+            "nullable": true
+          },
+          {
+            "checks": [
+              {
+                "name": "target_failure_count_nonnegative",
+                "expression": "failure_count \u003e= 0"
+              }
+            ],
+            "name": "failure_count",
+            "go_name": "FailureCount",
+            "key": "failure_count",
+            "kind": "integer",
+            "default": "0"
+          },
+          {
+            "name": "last_error",
+            "go_name": "LastError",
+            "key": "last_error",
+            "kind": "text",
+            "default": "''"
+          }
+        ],
+        "relations": [
+          {
+            "name": "App",
+            "table": "apps",
+            "foreign_key": "app_id",
+            "many": false,
+            "kind": "belongs_to"
+          },
+          {
+            "name": "Observations",
+            "table": "observations",
+            "foreign_key": "target_id",
+            "many": true,
+            "kind": "has_many"
+          },
+          {
+            "name": "Rules",
+            "table": "rules",
+            "foreign_key": "target_id",
+            "many": true,
+            "kind": "has_many"
+          }
+        ],
+        "indexes": [
+          {
+            "name": "targets_app_id_country",
+            "fields": [
+              "app_id",
+              "country"
+            ],
+            "unique": true
+          },
+          {
+            "name": "targets_next_due_at",
+            "fields": [
+              "next_due_at"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "statements": [
+    "CREATE TABLE \"apps\" (\n  \"id\" INTEGER PRIMARY KEY CONSTRAINT \"app_id_positive\" CHECK (id \u003e 0),\n  \"name\" TEXT NOT NULL CHECK (length(\"name\") \u003e 0),\n  \"type\" TEXT NOT NULL,\n  \"last_modified\" INTEGER NOT NULL DEFAULT 0,\n  \"price_change_number\" INTEGER NOT NULL DEFAULT 0,\n  \"updated_at\" TEXT NOT NULL,\n  \"name_fold\" TEXT NOT NULL DEFAULT ''\n) STRICT;",
+    "CREATE INDEX \"apps_name_fold\" ON \"apps\" (\"name_fold\");",
+    "CREATE TABLE \"deliveries\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL CHECK (length(\"id\") \u003e 0) CHECK (length(\"id\") \u003c= 24),\n  \"event_id\" TEXT NOT NULL UNIQUE REFERENCES \"events\" (\"id\"),\n  \"destination_id\" TEXT NOT NULL CHECK (length(\"destination_id\") \u003e 0),\n  \"status\" TEXT NOT NULL DEFAULT 'pending' CHECK (\"status\" IN ('pending', 'sending', 'retry', 'sent', 'dead', 'cancelled')),\n  \"attempt_count\" INTEGER NOT NULL DEFAULT 0 CONSTRAINT \"delivery_attempt_count_nonnegative\" CHECK (attempt_count \u003e= 0),\n  \"next_attempt_at\" TEXT NOT NULL,\n  \"message_id\" TEXT NOT NULL DEFAULT '',\n  \"last_error\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TEXT NOT NULL,\n  \"updated_at\" TEXT NOT NULL\n) STRICT;",
+    "CREATE INDEX \"deliveries_status_next_attempt_at\" ON \"deliveries\" (\"status\", \"next_attempt_at\");",
+    "CREATE TABLE \"events\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL CHECK (length(\"id\") \u003e 0) CHECK (length(\"id\") \u003c= 24),\n  \"rule_id\" TEXT NOT NULL REFERENCES \"rules\" (\"id\"),\n  \"observation_id\" TEXT NOT NULL REFERENCES \"observations\" (\"id\"),\n  \"payload\" TEXT NOT NULL,\n  \"created_at\" TEXT NOT NULL\n) STRICT;",
+    "CREATE UNIQUE INDEX \"events_rule_id_observation_id\" ON \"events\" (\"rule_id\", \"observation_id\");",
+    "CREATE TABLE \"free_deliveries\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL CHECK (length(\"id\") \u003e 0) CHECK (length(\"id\") \u003c= 24),\n  \"offer_id\" TEXT NOT NULL CHECK (length(\"offer_id\") \u003e 0),\n  \"subscription_id\" TEXT NOT NULL CHECK (length(\"subscription_id\") \u003e 0),\n  \"offer_generation\" INTEGER NOT NULL DEFAULT 1 CONSTRAINT \"freedelivery_offer_generation_positive\" CHECK (offer_generation \u003e 0),\n  \"destination_kind\" TEXT NOT NULL CHECK (\"destination_kind\" IN ('dm', 'channel')),\n  \"destination_id\" TEXT NOT NULL CHECK (length(\"destination_id\") \u003e 0),\n  \"payload\" TEXT NOT NULL,\n  \"status\" TEXT NOT NULL DEFAULT 'pending' CHECK (\"status\" IN ('pending', 'sending', 'retry', 'sent', 'dead', 'cancelled')),\n  \"attempt_count\" INTEGER NOT NULL DEFAULT 0 CONSTRAINT \"freedelivery_attempt_count_nonnegative\" CHECK (attempt_count \u003e= 0),\n  \"next_attempt_at\" TEXT NOT NULL,\n  \"message_id\" TEXT NOT NULL DEFAULT '',\n  \"last_error\" TEXT NOT NULL DEFAULT '',\n  \"created_at\" TEXT NOT NULL,\n  \"updated_at\" TEXT NOT NULL\n) STRICT;",
+    "CREATE UNIQUE INDEX \"free_deliveries_offer_id_offer_generation_subscription_id\" ON \"free_deliveries\" (\"offer_id\", \"offer_generation\", \"subscription_id\");",
+    "CREATE INDEX \"free_deliveries_status_next_attempt_at\" ON \"free_deliveries\" (\"status\", \"next_attempt_at\");",
+    "CREATE TABLE \"free_monitors\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL,\n  \"checked_at\" TEXT,\n  \"next_check_at\" TEXT NOT NULL,\n  \"status\" TEXT NOT NULL DEFAULT 'not checked',\n  \"problems\" TEXT NOT NULL DEFAULT '[]',\n  \"failures\" INTEGER NOT NULL DEFAULT 0\n) STRICT;",
+    "CREATE TABLE \"free_offers\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL CHECK (length(\"id\") \u003e 0) CHECK (length(\"id\") \u003c= 24),\n  \"identity\" TEXT NOT NULL UNIQUE,\n  \"source\" TEXT NOT NULL CHECK (length(\"source\") \u003e 0),\n  \"payload\" TEXT NOT NULL,\n  \"eligible\" INTEGER NOT NULL DEFAULT 0 CHECK (\"eligible\" IN (0, 1)),\n  \"closed\" INTEGER NOT NULL DEFAULT 0 CHECK (\"closed\" IN (0, 1)),\n  \"generation\" INTEGER NOT NULL DEFAULT 1 CONSTRAINT \"freeoffer_generation_positive\" CHECK (generation \u003e 0),\n  \"first_seen_at\" TEXT NOT NULL,\n  \"last_seen_at\" TEXT NOT NULL\n) STRICT;",
+    "CREATE INDEX \"free_offers_source_eligible\" ON \"free_offers\" (\"source\", \"eligible\");",
+    "CREATE TABLE \"free_subscriptions\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL CHECK (length(\"id\") \u003e 0) CHECK (length(\"id\") \u003c= 24),\n  \"scope\" TEXT NOT NULL CHECK (length(\"scope\") \u003e 0),\n  \"source\" TEXT NOT NULL CHECK (length(\"source\") \u003e 0),\n  \"destination_kind\" TEXT NOT NULL CHECK (\"destination_kind\" IN ('dm', 'channel')),\n  \"destination_id\" TEXT NOT NULL CHECK (length(\"destination_id\") \u003e 0),\n  \"managed_by\" TEXT NOT NULL CHECK (length(\"managed_by\") \u003e 0),\n  \"enabled\" INTEGER NOT NULL DEFAULT 1 CHECK (\"enabled\" IN (0, 1)),\n  \"created_at\" TEXT NOT NULL,\n  \"updated_at\" TEXT NOT NULL\n) STRICT;",
+    "CREATE UNIQUE INDEX \"free_subscriptions_scope_source\" ON \"free_subscriptions\" (\"scope\", \"source\");",
+    "CREATE INDEX \"free_subscriptions_source_enabled\" ON \"free_subscriptions\" (\"source\", \"enabled\");",
+    "CREATE TABLE \"observations\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL CHECK (length(\"id\") \u003e 0) CHECK (length(\"id\") \u003c= 24),\n  \"target_id\" TEXT NOT NULL REFERENCES \"targets\" (\"id\"),\n  \"observed_at\" TEXT NOT NULL,\n  \"price\" TEXT NOT NULL\n) STRICT;",
+    "CREATE INDEX \"observations_observed_at\" ON \"observations\" (\"observed_at\");",
+    "CREATE INDEX \"observations_target_id_observed_at\" ON \"observations\" (\"target_id\", \"observed_at\");",
+    "CREATE TABLE \"rules\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL CHECK (length(\"id\") \u003e 0) CHECK (length(\"id\") \u003c= 24),\n  \"target_id\" TEXT NOT NULL REFERENCES \"targets\" (\"id\"),\n  \"owner_id\" TEXT NOT NULL CHECK (length(\"owner_id\") \u003e 0),\n  \"request_id\" TEXT UNIQUE,\n  \"condition\" TEXT NOT NULL CHECK (\"condition\" IN ('any_sale', 'sale_under_budget')),\n  \"budget_minor\" INTEGER CONSTRAINT \"rule_budget_minor_nonnegative\" CHECK (budget_minor \u003e= 0),\n  \"budget_currency\" TEXT NOT NULL DEFAULT '',\n  \"recurring\" INTEGER NOT NULL DEFAULT 0 CHECK (\"recurring\" IN (0, 1)),\n  \"enabled\" INTEGER NOT NULL DEFAULT 1 CHECK (\"enabled\" IN (0, 1)),\n  \"latched\" INTEGER NOT NULL DEFAULT 0 CHECK (\"latched\" IN (0, 1)),\n  \"created_at\" TEXT NOT NULL,\n  \"updated_at\" TEXT NOT NULL,\n  CONSTRAINT \"rule_budget\" CHECK ((condition = 'any_sale' AND budget_minor IS NULL AND budget_currency = '') OR (condition = 'sale_under_budget' AND budget_minor IS NOT NULL AND budget_minor \u003e= 0 AND length(budget_currency) = 3 AND budget_currency GLOB '[A-Z][A-Z][A-Z]'))\n) STRICT;",
+    "CREATE INDEX \"rules_owner_id_enabled\" ON \"rules\" (\"owner_id\", \"enabled\");",
+    "CREATE UNIQUE INDEX \"rules_owner_id_target_id_condition\" ON \"rules\" (\"owner_id\", \"target_id\", \"condition\") WHERE enabled = 1;",
+    "CREATE INDEX \"rules_target_id_enabled\" ON \"rules\" (\"target_id\", \"enabled\");",
+    "CREATE TABLE \"targets\" (\n  \"id\" TEXT PRIMARY KEY NOT NULL CHECK (length(\"id\") \u003e 0) CHECK (length(\"id\") \u003c= 24),\n  \"app_id\" INTEGER NOT NULL REFERENCES \"apps\" (\"id\"),\n  \"country\" TEXT NOT NULL CHECK (length(\"country\") \u003c= 2),\n  \"next_due_at\" TEXT NOT NULL,\n  \"last_observed_at\" TEXT,\n  \"failure_count\" INTEGER NOT NULL DEFAULT 0 CONSTRAINT \"target_failure_count_nonnegative\" CHECK (failure_count \u003e= 0),\n  \"last_error\" TEXT NOT NULL DEFAULT '',\n  CONSTRAINT \"target_country\" CHECK (length(country) = 2 AND country GLOB '[A-Z][A-Z]')\n) STRICT;",
+    "CREATE UNIQUE INDEX \"targets_app_id_country\" ON \"targets\" (\"app_id\", \"country\");",
+    "CREATE INDEX \"targets_next_due_at\" ON \"targets\" (\"next_due_at\");"
+  ]
+}

@@ -10,9 +10,9 @@ import (
 	"testing/synctest"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent/rule"
 	"github.com/depthbomb/dealfox/internal/domain"
 	"github.com/depthbomb/dealfox/internal/store"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
 	"github.com/depthbomb/dealfox/internal/tracker"
 	"github.com/depthbomb/tomogo/api"
@@ -215,7 +215,7 @@ func TestAccountDeletionRequiresConfirmedReply(t *testing.T) {
 			done <- app.DispatchInteraction(t.Context(), i, harness.Responder)
 		}()
 		synctest.Wait()
-		if db.Client.Rule.Query().Where(rule.OwnerIDEQ("123")).CountX(t.Context()) != 1 {
+		if testutil.Must(db.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq("123")).Count(t.Context())) != 1 {
 			t.Fatal("data was removed before consent")
 		}
 
@@ -229,7 +229,7 @@ func TestAccountDeletionRequiresConfirmedReply(t *testing.T) {
 			t.Fatal(err)
 		}
 		synctest.Wait()
-		if !strings.Contains(transport.result, "have been deleted") || db.Client.Rule.Query().Where(rule.OwnerIDEQ("123")).CountX(t.Context()) != 0 || len(h.deletions.users) != 0 {
+		if !strings.Contains(transport.result, "have been deleted") || testutil.Must(db.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq("123")).Count(t.Context())) != 0 || len(h.deletions.users) != 0 {
 			t.Fatal("confirmed deletion did not finish")
 		}
 

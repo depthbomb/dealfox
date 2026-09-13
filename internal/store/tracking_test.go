@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent/rule"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
 )
 
@@ -27,13 +27,13 @@ func TestTrackedGameCount(t *testing.T) {
 	check(1)
 	// Completed one-offs and catalog entries have no enabled tracking rules.
 	add(t, db, "four", "four", testutil.Price(20, 1000, time.Now()), false, nil)
-	db.Client.App.Create().SetID(30).SetName("Catalog only").SetType("game").SaveX(ctx)
+	testutil.Must(db.Client.App.Create().SetID(30).SetName("Catalog only").SetType("game").Save(ctx))
 	check(1)
 	// Recurring rules remain tracked while latched after a sale notification.
 	add(t, db, "five", "five", testutil.Price(40, 1000, time.Now()), true, nil)
 	check(2)
-	db.Client.Rule.Update().Where(rule.OwnerIDEQ("one")).SetEnabled(false).ExecX(ctx)
+	testutil.Must(db.Client.Rule.Update().Where(models.RuleColumns.OwnerID.Eq("one")).SetEnabled(false).Exec(ctx))
 	check(2)
-	db.Client.Rule.Update().SetEnabled(false).ExecX(ctx)
+	testutil.Must(db.Client.Rule.Update().AllRows().SetEnabled(false).Exec(ctx))
 	check(0)
 }

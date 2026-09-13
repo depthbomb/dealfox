@@ -101,7 +101,7 @@ func TestTrackNamedArgumentsPreserveBudgetAndRecurring(t *testing.T) {
 		t.Fatalf("track add failed: %v, %v", rules, err)
 	}
 	added := rules[0]
-	if !added.Recurring || added.BudgetMinor == nil || *added.BudgetMinor != 1999 || added.BudgetCurrency != "USD" || added.Edges.Target.Country != "US" {
+	if !added.Recurring || added.BudgetMinor == nil || *added.BudgetMinor != 1999 || added.BudgetCurrency != "USD" || testutil.Must(added.Target.Get()).Country != "US" {
 		t.Fatal("track arguments lost budget, recurrence, or default country")
 	}
 }

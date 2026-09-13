@@ -3,13 +3,9 @@ package store
 import (
 	"context"
 
-	"github.com/depthbomb/dealfox/ent"
-	"github.com/depthbomb/dealfox/ent/delivery"
-	"github.com/depthbomb/dealfox/ent/event"
-	"github.com/depthbomb/dealfox/ent/freedelivery"
-	"github.com/depthbomb/dealfox/ent/freesubscription"
-	"github.com/depthbomb/dealfox/ent/rule"
 	"github.com/depthbomb/dealfox/internal/domain"
+	"github.com/depthbomb/dealfox/internal/store/models"
+	"github.com/depthbomb/nook"
 )
 
 const deliverySlots = 1024
@@ -38,10 +34,10 @@ func (s *Store) DeleteAccount(ctx context.Context, owner string) error {
 	}
 	defer s.deliveryGate.Release(deliverySlots)
 
-	return s.write(ctx, func(c *ent.Client) error {
-		ownedRules := rule.OwnerIDEQ(owner)
-		ownedEvents := event.HasRuleWith(ownedRules)
-		if _, err := c.Delivery.Delete().Where(delivery.Or(delivery.DestinationIDEQ(owner), delivery.HasEventWith(ownedEvents))).Exec(ctx); err != nil {
+	return s.write(ctx, func(c *models.Client) error {
+		ownedRules := models.RuleColumns.OwnerID.Eq(owner)
+		ownedEvents := models.EventColumns.HasRuleWith(ownedRules)
+		if _, err := c.Delivery.Delete().Where(nook.Or(models.DeliveryColumns.DestinationID.Eq(owner), models.DeliveryColumns.HasEventWith(ownedEvents))).Exec(ctx); err != nil {
 			return err
 		}
 
@@ -53,13 +49,13 @@ func (s *Store) DeleteAccount(ctx context.Context, owner string) error {
 			return err
 		}
 
-		personal := freesubscription.Or(freesubscription.ScopeEQ("dm:"+owner), freesubscription.And(freesubscription.DestinationKindEQ(freesubscription.DestinationKindDm), freesubscription.DestinationIDEQ(owner)))
+		personal := nook.Or(models.FreeSubscriptionColumns.Scope.Eq("dm:"+owner), nook.And(models.FreeSubscriptionColumns.DestinationKind.Eq(models.FreeSubscriptionDestinationKindDm), models.FreeSubscriptionColumns.DestinationID.Eq(owner)))
 		ids, err := c.FreeSubscription.Query().Where(personal).IDs(ctx)
 		if err != nil {
 			return err
 		}
 
-		if _, err := c.FreeDelivery.Delete().Where(freedelivery.Or(freedelivery.SubscriptionIDIn(ids...), freedelivery.And(freedelivery.DestinationKindEQ(freedelivery.DestinationKindDm), freedelivery.DestinationIDEQ(owner)))).Exec(ctx); err != nil {
+		if _, err := c.FreeDelivery.Delete().Where(nook.Or(models.FreeDeliveryColumns.SubscriptionID.In(ids...), nook.And(models.FreeDeliveryColumns.DestinationKind.Eq(models.FreeDeliveryDestinationKindDm), models.FreeDeliveryColumns.DestinationID.Eq(owner)))).Exec(ctx); err != nil {
 			return err
 		}
 
@@ -67,6 +63,6 @@ func (s *Store) DeleteAccount(ctx context.Context, owner string) error {
 			return err
 		}
 
-		return c.FreeSubscription.Update().Where(freesubscription.ManagedByEQ(owner)).SetManagedBy("deleted").Exec(ctx)
+		return discard(c.FreeSubscription.Update().Where(models.FreeSubscriptionColumns.ManagedBy.Eq(owner)).SetManagedBy("deleted").Exec(ctx))
 	})
 }

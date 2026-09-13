@@ -8,10 +8,9 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent"
-	"github.com/depthbomb/dealfox/ent/delivery"
 	"github.com/depthbomb/dealfox/internal/config"
 	"github.com/depthbomb/dealfox/internal/domain"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/tomogo/rest"
 )
 
@@ -27,14 +26,14 @@ func permanent(err error) bool {
 	return false
 }
 
-func RetryAt(cfg *config.Config, d *ent.Delivery, now time.Time) (time.Time, bool) {
+func RetryAt(cfg *config.Config, d *models.Delivery, now time.Time) (time.Time, bool) {
 	expires := d.CreatedAt.Add(cfg.DeliveryRetryMaximumAge)
 	if !now.Before(expires) {
 		return time.Time{}, false
 	}
 
 	delay := cfg.DeliveryRetryInitialDelay
-	for attempt := 1; attempt < d.AttemptCount && delay < cfg.DeliveryRetryMaximumDelay; attempt++ {
+	for attempt := int64(1); attempt < d.AttemptCount && delay < cfg.DeliveryRetryMaximumDelay; attempt++ {
 		if delay > cfg.DeliveryRetryMaximumDelay/2 {
 			delay = cfg.DeliveryRetryMaximumDelay
 		} else {
@@ -43,7 +42,7 @@ func RetryAt(cfg *config.Config, d *ent.Delivery, now time.Time) (time.Time, boo
 	}
 
 	hash := fnv.New64a()
-	_, _ = hash.Write([]byte(d.ID + strconv.Itoa(d.AttemptCount)))
+	_, _ = hash.Write([]byte(d.ID + strconv.FormatInt(d.AttemptCount, 10)))
 	delay = min(time.Duration(float64(delay)*(float64(80+hash.Sum64()%41)/100)), cfg.DeliveryRetryMaximumDelay)
 	when := now.Add(delay)
 	if when.After(expires) {
@@ -80,8 +79,13 @@ func (w *Worker) Dispatch(ctx context.Context) (err error) {
 		w.Diagnostics.Observe("delivery", outcome, time.Since(d.CreatedAt), errors.Join(sendErr, err))
 	}()
 
+	event, err := d.Event.Get()
+	if err != nil {
+		return err
+	}
+
 	sendCtx, cancel := context.WithTimeout(ctx, time.Minute)
-	message, sendErr := w.Sender.Send(sendCtx, d.DestinationID, d.ID, d.Edges.Event.Payload)
+	message, sendErr := w.Sender.Send(sendCtx, d.DestinationID, d.ID, event.Payload.Data)
 	cancel()
 
 	// Persist a result even when shutdown canceled the Discord request.
@@ -89,15 +93,15 @@ func (w *Worker) Dispatch(ctx context.Context) (err error) {
 	defer finishCancel()
 	if sendErr == nil {
 		outcome = "sale-sent"
-		return w.Tracker.Store.Finish(finishCtx, d.ID, delivery.StatusSent, time.Now(), message, "")
+		return w.Tracker.Store.Finish(finishCtx, d.ID, models.DeliveryStatusSent, time.Now(), message, "")
 	}
 
 	retry, ok := RetryAt(w.Tracker.Config, d, time.Now())
-	status := delivery.StatusRetry
+	status := models.DeliveryStatusRetry
 	reason := "Discord transport failed"
 	if permanent(sendErr) || !ok {
 		outcome = "sale-dead"
-		status = delivery.StatusDead
+		status = models.DeliveryStatusDead
 		reason = "Discord delivery permanently failed or exhausted its retry window"
 	}
 

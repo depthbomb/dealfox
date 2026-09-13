@@ -5,3 +5,7 @@
 /coverage.out
 /diagnostics/
 *.exe
+*.db
+*.db-wal
+*.db-shm
+*.db.lock

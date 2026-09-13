@@ -13,7 +13,7 @@ func (Environment) EnvSchema() envschema.Schema {
 	positiveInt := envschema.Int().AtLeast(1)
 
 	return envschema.Must(
-		envschema.Named("DATABASE_URL", "DatabaseURL", envschema.Secret().Optional()),
+		envschema.Named("DATABASE_PATH", "DatabasePath", envschema.String().DefaultTo("")),
 		envschema.Named("BOT_TOKEN", "BotToken", envschema.Secret().Optional()),
 		envschema.Named("STEAM_WEB_API_KEY", "SteamAPIKey", envschema.Secret().Optional()),
 		envschema.Named("DISCORD_APPLICATION_ID", "ApplicationID", envschema.String().Optional()),

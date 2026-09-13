@@ -14,6 +14,7 @@ import (
 	"github.com/depthbomb/dealfox/internal/store"
 	"github.com/depthbomb/dealfox/internal/testutil"
 	"github.com/depthbomb/dealfox/internal/tracker"
+	"github.com/depthbomb/nook"
 )
 
 type blockedAccountSender struct {
@@ -78,7 +79,7 @@ func TestDeletionWaitsForBothNotificationWorkers(t *testing.T) {
 				if err := db.SetFreeSubscriptions(t.Context(), "dm:123", "123", "123", []string{"gog"}, true); err != nil {
 					t.Fatal(err)
 				}
-				sub := db.Client.FreeSubscription.Query().OnlyX(t.Context())
+				sub := testutil.Must(db.Client.FreeSubscription.Query().Only(t.Context()))
 				for _, product := range []string{"one", "two"} {
 					payload := freegames.Offer{
 						Source:      "gog",
@@ -98,8 +99,8 @@ func TestDeletionWaitsForBothNotificationWorkers(t *testing.T) {
 							},
 						},
 					}
-					offer := db.Client.FreeOffer.Create().SetIdentity(product).SetSource("gog").SetPayload(payload).SetEligible(true).SaveX(t.Context())
-					db.Client.FreeDelivery.Create().SetOfferID(offer.ID).SetSubscriptionID(sub.ID).SetDestinationKind("dm").SetDestinationID("123").SetPayload(payload).SaveX(t.Context())
+					offer := testutil.Must(db.Client.FreeOffer.Create().SetIdentity(product).SetSource("gog").SetPayload(nook.JSON[freegames.Offer]{Data: payload}).SetEligible(true).Save(t.Context()))
+					testutil.Must(db.Client.FreeDelivery.Create().SetOfferID(offer.ID).SetSubscriptionID(sub.ID).SetDestinationKind("dm").SetDestinationID("123").SetPayload(nook.JSON[freegames.Offer]{Data: payload}).Save(t.Context()))
 				}
 				w := &FreeGames{
 					Store:  db,

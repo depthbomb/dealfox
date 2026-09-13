@@ -5,17 +5,18 @@ import (
 	"testing"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent/freedelivery"
 	"github.com/depthbomb/dealfox/internal/freegames"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
+	"github.com/depthbomb/nook"
 )
 
 func TestDiagnosticsQueueAgesAndPoolStatistics(t *testing.T) {
 	db, _ := testutil.Database(t)
 	ctx := t.Context()
 	now := time.Now()
-	for i, status := range []freedelivery.Status{freedelivery.StatusPending, freedelivery.StatusRetry, freedelivery.StatusSending, freedelivery.StatusDead, freedelivery.StatusSent} {
-		_, err := db.Client.FreeDelivery.Create().SetOfferID("offer").SetSubscriptionID(string(rune('a' + i))).SetDestinationKind(freedelivery.DestinationKindDm).SetDestinationID("private-destination").SetPayload(freegames.Offer{}).SetStatus(status).SetCreatedAt(now.Add(-time.Duration(i+1) * time.Hour)).Save(ctx)
+	for i, status := range []models.FreeDeliveryStatus{models.FreeDeliveryStatusPending, models.FreeDeliveryStatusRetry, models.FreeDeliveryStatusSending, models.FreeDeliveryStatusDead, models.FreeDeliveryStatusSent} {
+		_, err := db.Client.FreeDelivery.Create().SetOfferID("offer").SetSubscriptionID(string(rune('a' + i))).SetDestinationKind(models.FreeDeliveryDestinationKindDm).SetDestinationID("private-destination").SetPayload(nook.JSON[freegames.Offer]{Data: freegames.Offer{}}).SetStatus(status).SetCreatedAt(now.Add(-time.Duration(i+1) * time.Hour)).Save(ctx)
 		if err != nil {
 			t.Fatal(err)
 		}

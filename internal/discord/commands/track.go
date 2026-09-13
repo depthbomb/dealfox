@@ -199,7 +199,15 @@ func (h *Handler) listTracks(ctx context.Context, user string, responder *intera
 		return nil
 	}
 	for _, r := range rules {
-		t := r.Edges.Target
+		t, err := r.Target.Get()
+		if err != nil {
+			return err
+		}
+
+		app, err := t.App.Get()
+		if err != nil {
+			return err
+		}
 		condition := "any sale"
 		if r.BudgetMinor != nil {
 			condition = "sale at or under " + (domain.Money{
@@ -213,7 +221,7 @@ func (h *Handler) listTracks(ctx context.Context, user string, responder *intera
 			cadence = "recurring"
 		}
 
-		line := fmt.Sprintf("**%s** (%d, %s): %s, %s\n`%s`\n\n", embeds.EscapeMarkdown(embeds.Limit(t.Edges.App.Name, 150)), t.AppID, t.Country, condition, cadence, r.ID)
+		line := fmt.Sprintf("**%s** (%d, %s): %s, %s\n`%s`\n\n", embeds.EscapeMarkdown(embeds.Limit(app.Name, 150)), t.AppID, t.Country, condition, cadence, r.ID)
 		if body.Len()+len(line) > 3500 {
 			if err := flush(); err != nil {
 				return err

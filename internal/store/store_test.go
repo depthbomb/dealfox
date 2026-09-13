@@ -1,22 +1,18 @@
 package store_test
 
 import (
-	"context"
 	"errors"
 	"sync"
 	"testing"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent"
-	"github.com/depthbomb/dealfox/ent/delivery"
-	"github.com/depthbomb/dealfox/ent/rule"
 	"github.com/depthbomb/dealfox/internal/domain"
 	"github.com/depthbomb/dealfox/internal/store"
+	"github.com/depthbomb/dealfox/internal/store/models"
 	"github.com/depthbomb/dealfox/internal/testutil"
-	"github.com/jackc/pgx/v5"
 )
 
-func add(t *testing.T, db *store.Store, owner, request string, p domain.Price, recurring bool, budget *domain.Money) *ent.Rule {
+func add(t *testing.T, db *store.Store, owner, request string, p domain.Price, recurring bool, budget *domain.Money) *models.Rule {
 	t.Helper()
 	condition := domain.AnySale
 	if budget != nil {
@@ -51,7 +47,7 @@ func TestSaleLifecycle(t *testing.T) {
 	}
 
 	replay := add(t, db, "one", "request-one", p, false, nil)
-	if replay.ID != oneOff.ID || db.Client.Delivery.Query().CountX(ctx) != 1 {
+	if replay.ID != oneOff.ID || testutil.Must(db.Client.Delivery.Query().Count(ctx)) != 1 {
 		t.Fatal("replayed request duplicated the rule or notification")
 	}
 
@@ -136,7 +132,7 @@ func TestSaleLifecycle(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			if count := db.Client.Delivery.Query().CountX(ctx); count != step.want {
+			if count := testutil.Must(db.Client.Delivery.Query().Count(ctx)); count != int64(step.want) {
 				t.Fatalf("got %d deliveries, want %d", count, step.want)
 			}
 		})
@@ -148,7 +144,7 @@ func TestSaleLifecycle(t *testing.T) {
 	}
 
 	add(t, db, "late", "late", stale, true, nil)
-	if !db.Client.Rule.GetX(ctx, recurring.ID).Latched {
+	if !testutil.Must(db.Client.Rule.Get(ctx, recurring.ID)).Latched {
 		t.Fatal("stale cached creation data regressed another rule's latch")
 	}
 
@@ -160,7 +156,7 @@ func TestSaleLifecycle(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if db.Client.Rule.GetX(ctx, recurring.ID).Enabled {
+	if testutil.Must(db.Client.Rule.Get(ctx, recurring.ID)).Enabled {
 		t.Fatal("removed rule remained enabled")
 	}
 }
@@ -201,7 +197,7 @@ func TestTransactionsQuotaAndClaims(t *testing.T) {
 		t.Fatalf("quota admitted %d rules", successes)
 	}
 
-	before := db.Client.Observation.Query().CountX(ctx)
+	before := testutil.Must(db.Client.Observation.Query().Count(ctx))
 	incomplete := testutil.Price(500, 1000, at)
 	incomplete.Regular = nil
 	_, err := db.Add(ctx, store.AddRequest{
@@ -211,7 +207,7 @@ func TestTransactionsQuotaAndClaims(t *testing.T) {
 		Maximum:   25,
 		Interval:  time.Hour,
 	})
-	if err == nil || db.Client.Observation.Query().CountX(ctx) != before || db.Client.Rule.Query().Where(rule.OwnerIDEQ("rollback")).CountX(ctx) != 0 {
+	if err == nil || testutil.Must(db.Client.Observation.Query().Count(ctx)) != before || testutil.Must(db.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq("rollback")).Count(ctx)) != 0 {
 		t.Fatal("failed notification creation did not roll back atomically")
 	}
 
@@ -221,7 +217,7 @@ func TestTransactionsQuotaAndClaims(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer other.Close()
-	claims := make(chan *ent.Delivery, 2)
+	claims := make(chan *models.Delivery, 2)
 	errors := make(chan error, 2)
 	for _, connection := range []*store.Store{db, other} {
 		group.Go(func() {
@@ -259,7 +255,7 @@ func TestTransactionsQuotaAndClaims(t *testing.T) {
 		t.Fatalf("recovery: %+v, %v", d, err)
 	}
 
-	if err := db.Finish(ctx, d.ID, delivery.StatusDead, time.Now(), "", "test failure"); err != nil {
+	if err := db.Finish(ctx, d.ID, models.DeliveryStatusDead, time.Now(), "", "test failure"); err != nil {
 		t.Fatal(err)
 	}
 
@@ -275,20 +271,22 @@ func TestTransactionsQuotaAndClaims(t *testing.T) {
 		t.Fatal("cancelled delivery was retried")
 	}
 
-	conn, err := pgx.Connect(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close(ctx)
-	if _, err := conn.Exec(ctx, "UPDATE deliveries SET updated_at = now() - interval '100 days'; UPDATE events SET created_at = now() - interval '100 days'; UPDATE rules SET updated_at = now() - interval '100 days' WHERE NOT enabled"); err != nil {
-		t.Fatal(err)
+	old := time.Now().Add(-100 * 24 * time.Hour).UTC().Format("2006-01-02T15:04:05.000000000Z")
+	for _, statement := range []string{
+		"UPDATE deliveries SET updated_at = ?",
+		"UPDATE events SET created_at = ?",
+		"UPDATE rules SET updated_at = ? WHERE NOT enabled",
+	} {
+		if _, err := db.Client.SQL().ExecContext(ctx, statement, old); err != nil {
+			t.Fatal(err)
+		}
 	}
 
 	if _, err := db.Purge(ctx, time.Nanosecond, time.Hour, time.Hour); err != nil {
 		t.Fatal(err)
 	}
 
-	if db.Client.Delivery.Query().CountX(ctx) != 0 || db.Client.Event.Query().CountX(ctx) != 0 || db.Client.Rule.Query().Where(rule.OwnerIDEQ("delivery")).CountX(ctx) != 0 {
+	if testutil.Must(db.Client.Delivery.Query().Count(ctx)) != 0 || testutil.Must(db.Client.Event.Query().Count(ctx)) != 0 || testutil.Must(db.Client.Rule.Query().Where(models.RuleColumns.OwnerID.Eq("delivery")).Count(ctx)) != 0 {
 		t.Fatal("retention failed to purge terminal dependencies")
 	}
 
@@ -304,14 +302,9 @@ func TestTransactionsQuotaAndClaims(t *testing.T) {
 }
 
 func TestMigrationValidation(t *testing.T) {
-	db, dsn := testutil.Database(t)
+	db, _ := testutil.Database(t)
 	ctx := t.Context()
-	conn, err := pgx.Connect(ctx, dsn)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close(context.Background())
-	if _, err := conn.Exec(ctx, "UPDATE atlas_schema_revisions SET hash = 'tampered'"); err != nil {
+	if _, err := db.Client.SQL().ExecContext(ctx, "UPDATE nook_migrations SET checksum = 'tampered'"); err != nil {
 		t.Fatal(err)
 	}
 

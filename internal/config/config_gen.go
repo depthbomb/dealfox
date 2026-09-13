@@ -10,7 +10,7 @@ import (
 )
 
 var generatedSchema = envschema.Must(
-	envschema.Named("DATABASE_URL", "DatabaseURL", envschema.Secret().Optional()),
+	envschema.Named("DATABASE_PATH", "DatabasePath", envschema.String().DefaultTo("")),
 	envschema.Named("BOT_TOKEN", "BotToken", envschema.Secret().Optional()),
 	envschema.Named("STEAM_WEB_API_KEY", "SteamAPIKey", envschema.Secret().Optional()),
 	envschema.Named("DISCORD_APPLICATION_ID", "ApplicationID", envschema.String().Optional()),
@@ -55,7 +55,7 @@ var generatedSchema = envschema.Must(
 ).LessThanVariable("DELIVERY_RETRY_INITIAL_DELAY", "DELIVERY_RETRY_MAXIMUM_DELAY").LessThanVariable("DELIVERY_RETRY_MAXIMUM_DELAY", "DELIVERY_RETRY_MAXIMUM_AGE")
 
 type Config struct {
-	DatabaseURL                  *envschema.SecretValue `env:"DATABASE_URL"`
+	DatabasePath                 string                 `env:"DATABASE_PATH"`
 	BotToken                     *envschema.SecretValue `env:"BOT_TOKEN"`
 	SteamAPIKey                  *envschema.SecretValue `env:"STEAM_WEB_API_KEY"`
 	ApplicationID                *string                `env:"DISCORD_APPLICATION_ID"`
@@ -106,13 +106,11 @@ func LoadFrom(lookup envschema.LookupFunc) (Config, error) {
 	if err != nil {
 		return Config{}, err
 	}
-	if _, present := values["DATABASE_URL"]; present {
-		value0, err := envschema.ValueAs[envschema.SecretValue](values, "DATABASE_URL")
-		if err != nil {
-			failures = append(failures, err)
-		}
-		config.DatabaseURL = &value0
+	value0, err := envschema.ValueAs[string](values, "DATABASE_PATH")
+	if err != nil {
+		failures = append(failures, err)
 	}
+	config.DatabasePath = value0
 	if _, present := values["BOT_TOKEN"]; present {
 		value1, err := envschema.ValueAs[envschema.SecretValue](values, "BOT_TOKEN")
 		if err != nil {
@@ -354,12 +352,12 @@ func LoadWithReport(input envschema.Source) (Config, envschema.LoadReport, error
 	}
 	var config Config
 	var failures []error
-	if _, present := values["DATABASE_URL"]; present {
-		value, err := envschema.ValueAs[envschema.SecretValue](values, "DATABASE_URL")
+	if _, present := values["DATABASE_PATH"]; present {
+		value, err := envschema.ValueAs[string](values, "DATABASE_PATH")
 		if err != nil {
 			failures = append(failures, err)
 		} else {
-			config.DatabaseURL = &value
+			config.DatabasePath = value
 		}
 	}
 	if _, present := values["BOT_TOKEN"]; present {

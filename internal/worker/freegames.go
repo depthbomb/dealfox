@@ -9,12 +9,11 @@ import (
 	"sync"
 	"time"
 
-	"github.com/depthbomb/dealfox/ent"
-	"github.com/depthbomb/dealfox/ent/freedelivery"
 	"github.com/depthbomb/dealfox/internal/config"
 	"github.com/depthbomb/dealfox/internal/diagnostics"
 	"github.com/depthbomb/dealfox/internal/freegames"
 	"github.com/depthbomb/dealfox/internal/store"
+	"github.com/depthbomb/dealfox/internal/store/models"
 )
 
 type FreeScanner interface {
@@ -119,27 +118,27 @@ func (w *FreeGames) Dispatch(ctx context.Context) (err error) {
 	}()
 
 	sendCtx, cancel := context.WithTimeout(ctx, time.Minute)
-	message, sendErr := w.Sender.SendFree(sendCtx, string(d.DestinationKind), d.DestinationID, d.ID, d.Payload)
+	message, sendErr := w.Sender.SendFree(sendCtx, string(d.DestinationKind), d.DestinationID, d.ID, d.Payload.Data)
 	cancel()
 
 	finishCtx, finishCancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
 	defer finishCancel()
 	if sendErr == nil {
 		outcome = "free-sent"
-		return w.Store.FinishFree(finishCtx, d.ID, freedelivery.StatusSent, time.Now(), message, "")
+		return w.Store.FinishFree(finishCtx, d.ID, models.FreeDeliveryStatusSent, time.Now(), message, "")
 	}
 
-	retry, ok := RetryAt(w.Config, &ent.Delivery{
+	retry, ok := RetryAt(w.Config, &models.Delivery{
 		ID:           d.ID,
 		CreatedAt:    d.CreatedAt,
 		AttemptCount: d.AttemptCount,
 	}, time.Now())
 
-	status := freedelivery.StatusRetry
+	status := models.FreeDeliveryStatusRetry
 
 	if permanent(sendErr) || !ok {
 		outcome = "free-dead"
-		status = freedelivery.StatusDead
+		status = models.FreeDeliveryStatusDead
 	}
 
 	w.Logger.Warn("free game delivery failed", "delivery_id", d.ID, "attempt", d.AttemptCount, "error", sendErr)
